@@ -72,8 +72,8 @@ interface ScrubbableInputProps {
   onHoverEnd?: () => void;
 }
 
-const ScrubbableInput: React.FC<ScrubbableInputProps> = ({ 
-  value, onChange, onCommit, label, tooltip, showTooltip, hideTooltip, onHoverStart, onHoverEnd 
+const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
+  value, onChange, onCommit, label, tooltip, showTooltip, hideTooltip, onHoverStart, onHoverEnd
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState(value.toString());
@@ -118,10 +118,10 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
         // Use movementX for relative movement when locked
         // Cap movementX to prevent "shooting" if browser reports huge values
         let movementX = me.movementX || 0;
-        
+
         // Some browsers might report a huge jump on the first frame of lock
         if (Math.abs(movementX) > 500) movementX = 0;
-        
+
         startVal.current += movementX;
         onChange(Math.round(startVal.current));
       }
@@ -163,7 +163,7 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
 
   return (
     <div className="flex items-center justify-between group/scrub">
-      <label 
+      <label
         className="text-[11px] text-zinc-400 flex items-center gap-1 cursor-help select-none"
         onMouseEnter={() => {
           showTooltip(tooltip);
@@ -246,15 +246,16 @@ const SortableElement = ({
     isDragging,
   } = useSortable({ id: el.id, disabled: isOverlay });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+  // We use Framer Motion for the actual 'sliding' animation during swaps.
+  // dnd-kit's transform is used only for the element being actively dragged.
+  const motionStyle = {
+    transform: isDragging ? CSS.Translate.toString(transform) : undefined,
     marginLeft: depth * 12,
     opacity: isDragging ? 0.3 : 1,
     zIndex: isOverlay ? 1000 : (isDragging ? 100 : 1),
     position: 'relative' as const,
     cursor: isDragging ? 'grabbing' : 'grab',
-    scale: isOverlay ? '1.02' : '1',
+    scale: isOverlay ? '1.05' : '1',
   };
 
   const content = (
@@ -265,153 +266,162 @@ const SortableElement = ({
       onMouseLeave={() => !isOverlay && onHover(null)}
       {...(!isOverlay ? attributes : {})}
       {...(!isOverlay ? listeners : {})}
-      className={`group rounded-xl border bg-[#1a1a1a] overflow-hidden transition-all duration-200 ${
-        isSelected
-          ? 'border-[2px] shadow-lg'
-          : isHovered 
-            ? 'border border-white/20'
-            : 'border border-white/5'
-      } ${isOverlay ? 'shadow-2xl ring-2 ring-white/20' : ''}`}
-      style={{ 
+      className={`group rounded-xl border bg-[#1a1a1a] overflow-hidden transition-all duration-200 ${isSelected
+        ? 'border-[2px] shadow-lg'
+        : isHovered
+          ? 'border border-white/20'
+          : 'border border-white/5'
+        } ${isOverlay ? 'shadow-2xl ring-2 ring-white/20' : ''}`}
+      style={{
         borderColor: isSelected || isHovered ? highlightColor : undefined,
         boxShadow: isSelected ? `0 10px 25px -5px ${highlightColor}20` : (isOverlay ? '0 20px 40px rgba(0,0,0,0.5)' : undefined),
         cursor: isDragging ? 'grabbing' : 'grab',
       }}
     >
-        <div className="p-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <button 
-              onClick={(e) => { e.stopPropagation(); onUpdateEnd({ visible: !el.visible }); }}
-              className="p-1 rounded hover:bg-white/10 transition-colors"
-              style={{ color: el.visible ? highlightColor : '#52525b' }}
-            >
-              {el.visible ? <Eye size={14} /> : <EyeOff size={14} />}
-            </button>
-            <button 
-              onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
-              className="text-zinc-500 hover:text-white"
-            >
-              {el.type === 'group' ? (isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <div className="w-[14px]" />}
-            </button>
-            <div className="flex items-center gap-1.5 flex-1 min-w-0">
-              <div className="flex-1 min-w-0 flex items-center">
-                <input
-                  type="text"
-                  value={el.name}
-                  onChange={(e) => onUpdate({ name: e.target.value })}
-                  onBlur={(e) => onUpdateEnd({ name: e.target.value })}
-                  className="bg-transparent border-none outline-none text-xs font-semibold w-fit max-w-full focus:text-white truncate cursor-text"
-                  onClick={(e) => e.stopPropagation()}
-                  style={{ width: `${Math.max(el.name.length, 1)}ch` }}
-                />
-              </div>
+      <div className="p-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); onUpdateEnd({ visible: !el.visible }); }}
+            className="p-1 rounded hover:bg-white/10 transition-colors"
+            style={{ color: el.visible ? highlightColor : '#52525b' }}
+          >
+            {el.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+            className="text-zinc-500 hover:text-white"
+          >
+            {el.type === 'group' ? (isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <div className="w-[14px]" />}
+          </button>
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <div className="flex-1 min-w-0 flex items-center">
+              <input
+                type="text"
+                value={el.name}
+                onChange={(e) => onUpdate({ name: e.target.value })}
+                onBlur={(e) => onUpdateEnd({ name: e.target.value })}
+                className="bg-transparent border-none outline-none text-xs font-semibold w-fit max-w-full focus:text-white truncate cursor-text"
+                onClick={(e) => e.stopPropagation()}
+                style={{ width: `${Math.max(el.name.length, 1)}ch` }}
+              />
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            {el.type === 'rectangle' && (
-              <div className="relative group/color opacity-0 group-hover:opacity-100 transition-opacity">
-                <div 
-                  className="w-3 h-3 rounded-full border border-white/20 cursor-pointer"
-                  style={{ backgroundColor: (el as Rectangle).highlightColor }}
-                />
-                <input
-                  type="color"
-                  value={(el as Rectangle).highlightColor.startsWith('#') ? (el as Rectangle).highlightColor : '#3b82f6'}
-                  onChange={(e) => onUpdate({ highlightColor: e.target.value })}
-                  onBlur={(e) => onUpdateEnd({ highlightColor: e.target.value })}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </div>
-            )}
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              className="p-1.5 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
         </div>
-
-        <AnimatePresence>
-          {isExpanded && el.type === 'rectangle' && (
-            <motion.div
-              initial={{ height: 0 }}
-              animate={{ height: 'auto' }}
-              exit={{ height: 0 }}
-              className="px-4 pb-4 space-y-3 border-t border-white/5 pt-3"
-            >
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                <ScrubbableInput 
-                  label="Width" 
-                  value={(el as Rectangle).width} 
-                  onChange={(val) => onUpdate({ width: val })}
-                  onCommit={(val) => onUpdateEnd({ width: val })}
-                  tooltip="How wide it is."
-                  showTooltip={showTooltip}
-                  hideTooltip={hideTooltip}
-                />
-                <ScrubbableInput 
-                  label="Height" 
-                  value={(el as Rectangle).height} 
-                  onChange={(val) => onUpdate({ height: val })}
-                  onCommit={(val) => onUpdateEnd({ height: val })}
-                  tooltip="How tall it is."
-                  showTooltip={showTooltip}
-                  hideTooltip={hideTooltip}
-                />
-                <ScrubbableInput 
-                  label="Up-Down" 
-                  value={(el as Rectangle).y} 
-                  onChange={(val) => onUpdate({ y: val })}
-                  onCommit={(val) => onUpdateEnd({ y: val })}
-                  tooltip="Where it is vertically."
-                  showTooltip={showTooltip}
-                  hideTooltip={hideTooltip}
-                />
-                <ScrubbableInput 
-                  label="Left-Right" 
-                  value={(el as Rectangle).x} 
-                  onChange={(val) => onUpdate({ x: val })}
-                  onCommit={(val) => onUpdateEnd({ x: val })}
-                  tooltip="Where it is horizontally."
-                  showTooltip={showTooltip}
-                  hideTooltip={hideTooltip}
-                />
-              </div>
-
-              <div className="space-y-2 pt-2 border-t border-white/5">
-                <ScrubbableInput 
-                  label="Depth" 
-                  value={el.depth} 
-                  onChange={(val) => onUpdate({ depth: val })}
-                  onCommit={(val) => onUpdateEnd({ depth: val })}
-                  tooltip="Layer order (higher = on top). Example: Depth 1 is bottom, Depth 10 is top."
-                  showTooltip={showTooltip}
-                  hideTooltip={hideTooltip}
-                />
-                <ScrubbableInput 
-                  label="Corner" 
-                  value={(el as Rectangle).cornerRadius} 
-                  onChange={(val) => onUpdate({ cornerRadius: val })}
-                  onCommit={(val) => onUpdateEnd({ cornerRadius: val })}
-                  tooltip="How rounded the corners are."
-                  showTooltip={showTooltip}
-                  hideTooltip={hideTooltip}
-                />
-              </div>
-            </motion.div>
+        <div className="flex items-center gap-1">
+          {el.type === 'rectangle' && (
+            <div className="relative group/color opacity-0 group-hover:opacity-100 transition-opacity">
+              <div
+                className="w-3 h-3 rounded-full border border-white/20 cursor-pointer"
+                style={{ backgroundColor: (el as Rectangle).highlightColor }}
+              />
+              <input
+                type="color"
+                value={(el as Rectangle).highlightColor.startsWith('#') ? (el as Rectangle).highlightColor : '#3b82f6'}
+                onChange={(e) => onUpdate({ highlightColor: e.target.value })}
+                onBlur={(e) => onUpdateEnd({ highlightColor: e.target.value })}
+                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
           )}
-        </AnimatePresence>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="p-1.5 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
+
+      <AnimatePresence initial={false}>
+        {isExpanded && el.type === 'rectangle' && (
+          <div
+            className="px-4 pb-4 space-y-3 border-t border-white/5 pt-3"
+          >
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+              <ScrubbableInput
+                label="Width"
+                value={(el as Rectangle).width}
+                onChange={(val) => onUpdate({ width: val })}
+                onCommit={(val) => onUpdateEnd({ width: val })}
+                tooltip="How wide it is."
+                showTooltip={showTooltip}
+                hideTooltip={hideTooltip}
+              />
+              <ScrubbableInput
+                label="Height"
+                value={(el as Rectangle).height}
+                onChange={(val) => onUpdate({ height: val })}
+                onCommit={(val) => onUpdateEnd({ height: val })}
+                tooltip="How tall it is."
+                showTooltip={showTooltip}
+                hideTooltip={hideTooltip}
+              />
+              <ScrubbableInput
+                label="Up-Down"
+                value={(el as Rectangle).y}
+                onChange={(val) => onUpdate({ y: val })}
+                onCommit={(val) => onUpdateEnd({ y: val })}
+                tooltip="Where it is vertically."
+                showTooltip={showTooltip}
+                hideTooltip={hideTooltip}
+              />
+              <ScrubbableInput
+                label="Left-Right"
+                value={(el as Rectangle).x}
+                onChange={(val) => onUpdate({ x: val })}
+                onCommit={(val) => onUpdateEnd({ x: val })}
+                tooltip="Where it is horizontally."
+                showTooltip={showTooltip}
+                hideTooltip={hideTooltip}
+              />
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-white/5">
+              <ScrubbableInput
+                label="Depth"
+                value={el.depth}
+                onChange={(val) => onUpdate({ depth: val })}
+                onCommit={(val) => onUpdateEnd({ depth: val })}
+                tooltip="Layer order (higher = on top). Example: Depth 1 is bottom, Depth 10 is top."
+                showTooltip={showTooltip}
+                hideTooltip={hideTooltip}
+              />
+              <ScrubbableInput
+                label="Corner"
+                value={(el as Rectangle).cornerRadius}
+                onChange={(val) => onUpdate({ cornerRadius: val })}
+                onCommit={(val) => onUpdateEnd({ cornerRadius: val })}
+                tooltip="How rounded the corners are."
+                showTooltip={showTooltip}
+                hideTooltip={hideTooltip}
+              />
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 
   if (isOverlay) return content;
 
   return (
-    <div ref={setNodeRef} style={style} className="space-y-1">
+    <motion.div
+      ref={setNodeRef}
+      layout
+      transition={{
+        type: 'spring',
+        stiffness: 500,
+        damping: 40,
+        mass: 0.8,
+        // Disable layout transition for the item being dragged so it follows the pointer 1:1
+        layout: isDragging ? { duration: 0 } : undefined
+      }}
+      style={motionStyle}
+      className="space-y-1"
+    >
       {content}
-    </div>
+    </motion.div>
   );
 };
 
@@ -419,7 +429,7 @@ export default function App() {
   const [elements, setElements] = useState<CanvasElement[]>(INITIAL_ELEMENTS);
   const [history, setHistory] = useState<CanvasElement[][]>([INITIAL_ELEMENTS]);
   const [historyIndex, setHistoryIndex] = useState(0);
-  
+
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -429,7 +439,9 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ text: string; visible: boolean }>({ text: '', visible: false });
   const [hoveredProperty, setHoveredProperty] = useState<{ id: string; type: string } | null>(null);
-  
+
+  const lastHueRef = useRef<number>(Math.floor(Math.random() * 360));
+
   const panelScrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to selected element in panel
@@ -448,7 +460,7 @@ export default function App() {
   const [newRectStart, setNewRectStart] = useState<{ x: number; y: number } | null>(null);
   const [currentDrawingRect, setCurrentDrawingRect] = useState<Rectangle | null>(null);
   const [transformingRect, setTransformingRect] = useState<Rectangle | null>(null);
-  
+
   const stageRef = useRef<any>(null);
   const trRef = useRef<any>(null);
 
@@ -467,9 +479,8 @@ export default function App() {
     setActiveId(event.active.id);
   };
 
-  const handlePanelDragEnd = (event: any) => {
+  const handlePanelDragOver = (event: any) => {
     const { active, over } = event;
-    setActiveId(null);
     if (!over || active.id === over.id) return;
 
     const activeId = active.id as string;
@@ -478,27 +489,19 @@ export default function App() {
     setElements((prev) => {
       const oldIndex = prev.findIndex((item) => item.id === activeId);
       const newIndex = prev.findIndex((item) => item.id === overId);
-      
+
       if (oldIndex === -1 || newIndex === -1) return prev;
+      if (oldIndex === newIndex) return prev;
 
-      const activeItem = prev[oldIndex];
-      const overItem = prev[newIndex];
-
-      let newParentId = overItem.parentId;
-      if (overItem.type === 'group' && expandedIds.has(overItem.id)) {
-        newParentId = overItem.id;
-      }
-
-      const updatedItem = { ...activeItem, parentId: newParentId };
-      const newItems = [...prev];
-      newItems.splice(oldIndex, 1);
-      
-      const finalOverIndex = newItems.findIndex(item => item.id === overId);
-      newItems.splice(finalOverIndex, 0, updatedItem);
-
-      pushToHistory(newItems);
-      return newItems;
+      // Optional: Update parentId if hovering over a different hierarchy level
+      // but for simple sliding, arrayMove is usually enough.
+      return arrayMove(prev, oldIndex, newIndex);
     });
+  };
+
+  const handlePanelDragEnd = (event: any) => {
+    setActiveId(null);
+    pushToHistory(elements);
   };
 
   // --- History Management ---
@@ -537,7 +540,7 @@ export default function App() {
         if (document.activeElement?.tagName === 'INPUT') return;
         handleDeleteMultiple(selectedIds);
       }
-      
+
       // Undo/Redo
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         if (e.shiftKey) {
@@ -600,12 +603,17 @@ export default function App() {
     return `#${f(0)}${f(8)}${f(4)}`;
   };
 
-  const generateDistinctColor = () => {
-    const h = Math.floor(Math.random() * 360);
-    const s = 40 + Math.random() * 50; // 40-90% saturation
-    const l = 40 + Math.random() * 30; // 40-70% brightness
+  const generateDistinctColor = useCallback(() => {
+    // Ensure the new hue is at least 60 degrees away from the last one
+    // This creates a "really different" color each time.
+    const step = 60 + Math.random() * 120;
+    const h = (lastHueRef.current + step) % 360;
+    lastHueRef.current = h;
+
+    const s = 65 + Math.random() * 20; // 65-85% saturation
+    const l = 50 + Math.random() * 10; // 50-60% brightness
     return hslToHex(h, s, l);
-  };
+  }, []);
 
   const handleStageMouseDown = (e: any) => {
     if (tool === 'rectangle') {
@@ -662,8 +670,8 @@ export default function App() {
   const handleStageMouseUp = () => {
     if (isDrawing && currentDrawingRect) {
       if (currentDrawingRect.width > 5 && currentDrawingRect.height > 5) {
-        const finalRect: Rectangle = { 
-          ...currentDrawingRect, 
+        const finalRect: Rectangle = {
+          ...currentDrawingRect,
           id: `rect-${Date.now()}`,
           name: getNextDefaultName('rectangle'),
           highlightColor: generateDistinctColor()
@@ -711,16 +719,16 @@ export default function App() {
 
   const applyConstraints = (rect: Rectangle, updates: Partial<Rectangle>): Rectangle => {
     const next = { ...rect, ...updates };
-    
+
     // Width/Height cannot be negative
     if (next.width < 0) next.width = 0;
     if (next.height < 0) next.height = 0;
-    
+
     // Corner radius clamping
     const maxRadius = Math.min(next.width, next.height) / 2;
     if (next.cornerRadius < 0) next.cornerRadius = 0;
     if (next.cornerRadius > maxRadius) next.cornerRadius = maxRadius;
-    
+
     return next;
   };
 
@@ -729,7 +737,7 @@ export default function App() {
     if (!targetElement) return;
 
     const isBulkUpdate = selectedIds.includes(id) && selectedIds.length > 1;
-    
+
     const newElements = elements.map(el => {
       if (el.id === id) {
         if (el.type === 'rectangle') {
@@ -737,12 +745,12 @@ export default function App() {
         }
         return { ...el, ...updates } as GroupData;
       }
-      
+
       if (isBulkUpdate && selectedIds.includes(el.id)) {
         const bulkUpdates: any = {};
         for (const key in updates) {
           if (key === 'name') continue; // Only change name of the clicked element
-          
+
           if (el.type === 'rectangle' && targetElement.type === 'rectangle') {
             const r = el as Rectangle;
             const t = targetElement as Rectangle;
@@ -757,13 +765,13 @@ export default function App() {
             bulkUpdates[key] = (updates as any)[key];
           }
         }
-        
+
         if (el.type === 'rectangle') {
           return applyConstraints(el as Rectangle, bulkUpdates);
         }
         return { ...el, ...bulkUpdates } as GroupData;
       }
-      
+
       return el;
     });
     setElements(newElements);
@@ -774,7 +782,7 @@ export default function App() {
     if (!targetElement) return;
 
     const isBulkUpdate = selectedIds.includes(id) && selectedIds.length > 1;
-    
+
     const newElements = elements.map(el => {
       if (el.id === id) {
         if (el.type === 'rectangle') {
@@ -782,12 +790,12 @@ export default function App() {
         }
         return { ...el, ...updates } as GroupData;
       }
-      
+
       if (isBulkUpdate && selectedIds.includes(el.id)) {
         const bulkUpdates: any = {};
         for (const key in updates) {
           if (key === 'name') continue; // Only change name of the clicked element
-          
+
           if (el.type === 'rectangle' && targetElement.type === 'rectangle') {
             const r = el as Rectangle;
             const t = targetElement as Rectangle;
@@ -802,13 +810,13 @@ export default function App() {
             bulkUpdates[key] = (updates as any)[key];
           }
         }
-        
+
         if (el.type === 'rectangle') {
           return applyConstraints(el as Rectangle, bulkUpdates);
         }
         return { ...el, ...bulkUpdates } as GroupData;
       }
-      
+
       return el;
     });
     pushToHistory(newElements);
@@ -855,10 +863,10 @@ export default function App() {
         width: Math.round(node.width() * node.scaleX()),
         height: Math.round(node.height() * node.scaleY()),
       };
-      
+
       node.scaleX(1);
       node.scaleY(1);
-      
+
       handleUpdateEnd(id, updates);
       setTransformingRect(null);
     }
@@ -900,10 +908,10 @@ export default function App() {
 
   const handleCreateGroup = () => {
     if (selectedIds.length === 0) return;
-    
+
     const groupId = `group-${Date.now()}`;
     const maxDepth = elements.length > 0 ? Math.max(...elements.map(el => el.depth)) : 0;
-    
+
     const newGroup: GroupData = {
       id: groupId,
       name: getNextDefaultName('group'),
@@ -912,14 +920,14 @@ export default function App() {
       expanded: true,
       depth: maxDepth + 1
     };
-    
+
     const newElements = elements.map(el => {
       if (selectedIds.includes(el.id)) {
         return { ...el, parentId: groupId };
       }
       return el;
     });
-    
+
     pushToHistory([...newElements, newGroup]);
     setSelectedIds([groupId]);
   };
@@ -937,7 +945,7 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0a] text-zinc-300 font-sans overflow-hidden">
       <CursorTooltip text={tooltip.text} visible={tooltip.visible} />
-      
+
       {/* Canvas Area */}
       <div className="flex-1 relative bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:20px_20px]">
         <Stage
@@ -949,115 +957,115 @@ export default function App() {
           ref={stageRef}
         >
           <Layer>
-                {sortedElements.map((el) => {
-                  if (el.type === 'rectangle') {
-                    const rect = el as Rectangle;
-                    return (
-                      <Rect
-                        key={rect.id}
-                        id={rect.id}
-                        {...rect}
-                        cornerRadius={rect.cornerRadius}
-                        draggable={tool === 'select'}
-                        onDragMove={handleDragMove}
-                        onDragEnd={handleDragEnd}
-                        onTransform={handleTransform}
-                        onTransformEnd={handleTransformEnd}
-                        onClick={(e) => {
-                          setLastSelectedId(rect.id);
-                          if (e.evt.shiftKey) {
-                            setSelectedIds(prev => 
-                              prev.includes(rect.id) 
-                                ? prev.filter(id => id !== rect.id) 
-                                : [...prev, rect.id]
-                            );
-                          } else {
-                            setSelectedIds([rect.id]);
-                          }
-                        }}
-                        onTap={(e) => {
-                          setLastSelectedId(rect.id);
-                          setSelectedIds([rect.id]);
-                        }}
-                        strokeScaleEnabled={false}
-                        stroke={hoveredId === rect.id || selectedIds.includes(rect.id) ? rect.highlightColor : rect.stroke}
-                        strokeWidth={hoveredId === rect.id || selectedIds.includes(rect.id) ? 4 : rect.strokeWidth}
-                        opacity={rect.visible ? 1 : 0}
-                      />
-                    );
-                  }
-                  return null;
-                })}
-
-                {currentDrawingRect && (
-                  <Rect {...currentDrawingRect} />
-                )}
-
-                {selectionRect && (
+            {sortedElements.map((el) => {
+              if (el.type === 'rectangle') {
+                const rect = el as Rectangle;
+                return (
                   <Rect
-                    x={selectionRect.x}
-                    y={selectionRect.y}
-                    width={selectionRect.width}
-                    height={selectionRect.height}
-                    fill="rgba(59, 130, 246, 0.1)"
-                    stroke="#3b82f6"
-                    strokeWidth={1}
-                    dash={[5, 5]}
+                    key={rect.id}
+                    id={rect.id}
+                    {...rect}
+                    cornerRadius={rect.cornerRadius}
+                    draggable={tool === 'select'}
+                    onDragMove={handleDragMove}
+                    onDragEnd={handleDragEnd}
+                    onTransform={handleTransform}
+                    onTransformEnd={handleTransformEnd}
+                    onClick={(e) => {
+                      setLastSelectedId(rect.id);
+                      if (e.evt.shiftKey) {
+                        setSelectedIds(prev =>
+                          prev.includes(rect.id)
+                            ? prev.filter(id => id !== rect.id)
+                            : [...prev, rect.id]
+                        );
+                      } else {
+                        setSelectedIds([rect.id]);
+                      }
+                    }}
+                    onTap={(e) => {
+                      setLastSelectedId(rect.id);
+                      setSelectedIds([rect.id]);
+                    }}
+                    strokeScaleEnabled={false}
+                    stroke={hoveredId === rect.id || selectedIds.includes(rect.id) ? rect.highlightColor : rect.stroke}
+                    strokeWidth={hoveredId === rect.id || selectedIds.includes(rect.id) ? 4 : rect.strokeWidth}
+                    opacity={rect.visible ? 1 : 0}
                   />
-                )}
-                
-                {/* Dimension Labels during resize or drawing */}
-                {(transformingRect || currentDrawingRect) && (() => {
-                  const rect = transformingRect || currentDrawingRect;
-                  if (!rect) return null;
-                  const labelW = `${rect.width} pixels`;
-                  const labelH = `${rect.height} pixels`;
-                  const color = rect.highlightColor;
-                  return (
-                    <Group>
-                      {/* Top */}
-                      <Text 
-                        x={rect.x + rect.width / 2 - 30} 
-                        y={rect.y - 25} 
-                        text={labelW} 
-                        fill={color} 
-                        fontSize={11} 
-                        fontStyle="bold" 
-                        align="center"
-                      />
-                      {/* Bottom */}
-                      <Text 
-                        x={rect.x + rect.width / 2 - 30} 
-                        y={rect.y + rect.height + 15} 
-                        text={labelW} 
-                        fill={color} 
-                        fontSize={11} 
-                        fontStyle="bold" 
-                        align="center"
-                      />
-                      {/* Right */}
-                      <Text 
-                        x={rect.x + rect.width + 10} 
-                        y={rect.y + rect.height / 2 - 6} 
-                        text={labelH} 
-                        fill={color} 
-                        fontSize={11} 
-                        fontStyle="bold" 
-                      />
-                      {/* Left */}
-                      <Text 
-                        x={rect.x - 70} 
-                        y={rect.y + rect.height / 2 - 6} 
-                        text={labelH} 
-                        fill={color} 
-                        fontSize={11} 
-                        fontStyle="bold" 
-                        align="right"
-                        width={60}
-                      />
-                    </Group>
-                  );
-                })()}
+                );
+              }
+              return null;
+            })}
+
+            {currentDrawingRect && (
+              <Rect {...currentDrawingRect} />
+            )}
+
+            {selectionRect && (
+              <Rect
+                x={selectionRect.x}
+                y={selectionRect.y}
+                width={selectionRect.width}
+                height={selectionRect.height}
+                fill="rgba(59, 130, 246, 0.1)"
+                stroke="#3b82f6"
+                strokeWidth={1}
+                dash={[5, 5]}
+              />
+            )}
+
+            {/* Dimension Labels during resize or drawing */}
+            {(transformingRect || currentDrawingRect) && (() => {
+              const rect = transformingRect || currentDrawingRect;
+              if (!rect) return null;
+              const labelW = `${rect.width} pixels`;
+              const labelH = `${rect.height} pixels`;
+              const color = rect.highlightColor;
+              return (
+                <Group>
+                  {/* Top */}
+                  <Text
+                    x={rect.x + rect.width / 2 - 30}
+                    y={rect.y - 25}
+                    text={labelW}
+                    fill={color}
+                    fontSize={11}
+                    fontStyle="bold"
+                    align="center"
+                  />
+                  {/* Bottom */}
+                  <Text
+                    x={rect.x + rect.width / 2 - 30}
+                    y={rect.y + rect.height + 15}
+                    text={labelW}
+                    fill={color}
+                    fontSize={11}
+                    fontStyle="bold"
+                    align="center"
+                  />
+                  {/* Right */}
+                  <Text
+                    x={rect.x + rect.width + 10}
+                    y={rect.y + rect.height / 2 - 6}
+                    text={labelH}
+                    fill={color}
+                    fontSize={11}
+                    fontStyle="bold"
+                  />
+                  {/* Left */}
+                  <Text
+                    x={rect.x - 70}
+                    y={rect.y + rect.height / 2 - 6}
+                    text={labelH}
+                    fill={color}
+                    fontSize={11}
+                    fontStyle="bold"
+                    align="right"
+                    width={60}
+                  />
+                </Group>
+              );
+            })()}
 
             {selectedIds.length > 0 && tool === 'select' && (() => {
               const selectedEl = elements.find(el => el.id === selectedIds[0]);
@@ -1096,8 +1104,8 @@ export default function App() {
                   <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Elements</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button 
-                    onClick={handleCreateGroup} 
+                  <button
+                    onClick={handleCreateGroup}
                     disabled={selectedIds.length === 0}
                     className="p-1 text-zinc-500 hover:text-white disabled:opacity-20 transition-opacity"
                     title="Group Selected"
@@ -1123,11 +1131,12 @@ export default function App() {
                     <p className="text-sm italic">No elements yet. Draw a rectangle to start.</p>
                   </div>
                 )}
-                
+
                 <DndContext
                   sensors={sensors}
                   collisionDetection={closestCenter}
                   onDragStart={handlePanelDragStart}
+                  onDragOver={handlePanelDragOver}
                   onDragEnd={handlePanelDragEnd}
                 >
                   <SortableContext
@@ -1154,7 +1163,7 @@ export default function App() {
                         const isSelected = selectedIds.includes(el.id);
                         const isHovered = hoveredId === el.id;
                         const highlightColor = el.type === 'rectangle' ? (el as Rectangle).highlightColor : '#3b82f6';
-                        
+
                         const children = elements.filter(child => child.parentId === el.id);
 
                         return (
@@ -1170,7 +1179,7 @@ export default function App() {
                                 if (e.shiftKey) {
                                   const currentIndex = elements.findIndex(r => r.id === el.id);
                                   const lastIndex = elements.findIndex(r => r.id === lastSelectedId);
-                                  
+
                                   if (lastIndex !== -1) {
                                     const start = Math.min(currentIndex, lastIndex);
                                     const end = Math.max(currentIndex, lastIndex);
@@ -1180,9 +1189,9 @@ export default function App() {
                                     setSelectedIds(prev => prev.includes(el.id) ? prev : [...prev, el.id]);
                                   }
                                 } else if (e.ctrlKey || e.metaKey) {
-                                  setSelectedIds(prev => 
-                                    prev.includes(el.id) 
-                                      ? prev.filter(id => id !== el.id) 
+                                  setSelectedIds(prev =>
+                                    prev.includes(el.id)
+                                      ? prev.filter(id => id !== el.id)
                                       : [...prev, el.id]
                                   );
                                 } else {
@@ -1208,7 +1217,19 @@ export default function App() {
                       return elements.filter(el => !el.parentId).map(el => renderElementRecursive(el));
                     })()}
                   </SortableContext>
-                  <DragOverlay dropAnimation={null}>
+                  <DragOverlay
+                    dropAnimation={{
+                      duration: 250,
+                      easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+                      sideEffects: defaultDropAnimationSideEffects({
+                        styles: {
+                          active: {
+                            opacity: '0.5',
+                          },
+                        },
+                      }),
+                    }}
+                  >
                     {activeId ? (() => {
                       const el = elements.find(e => e.id === activeId);
                       if (!el) return null;
@@ -1216,7 +1237,7 @@ export default function App() {
                       const isSelected = selectedIds.includes(el.id);
                       const isHovered = hoveredId === el.id;
                       const highlightColor = el.type === 'rectangle' ? (el as Rectangle).highlightColor : '#3b82f6';
-                      
+
                       return (
                         <SortableElement
                           el={el}
@@ -1225,12 +1246,12 @@ export default function App() {
                           isHovered={isHovered}
                           isExpanded={isExpanded}
                           highlightColor={highlightColor}
-                          onSelect={() => {}}
-                          onHover={() => {}}
-                          onToggleExpand={() => {}}
-                          onUpdate={() => {}}
-                          onUpdateEnd={() => {}}
-                          onDelete={() => {}}
+                          onSelect={() => { }}
+                          onHover={() => { }}
+                          onToggleExpand={() => { }}
+                          onUpdate={() => { }}
+                          onUpdateEnd={() => { }}
+                          onDelete={() => { }}
                           showTooltip={showTooltip}
                           hideTooltip={hideTooltip}
                           isOverlay={true}
@@ -1250,9 +1271,8 @@ export default function App() {
         <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl">
           <button
             onClick={() => setTool('select')}
-            className={`p-3 rounded-xl transition-all flex items-center gap-2 ${
-              tool === 'select' ? 'bg-white/10 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'
-            }`}
+            className={`p-3 rounded-xl transition-all flex items-center gap-2 ${tool === 'select' ? 'bg-white/10 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'
+              }`}
           >
             <div className="relative">
               <MousePointer2 size={20} />
@@ -1262,9 +1282,8 @@ export default function App() {
           </button>
           <button
             onClick={() => setTool('rectangle')}
-            className={`p-3 rounded-xl transition-all flex items-center gap-2 ${
-              tool === 'rectangle' ? 'bg-white/10 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'
-            }`}
+            className={`p-3 rounded-xl transition-all flex items-center gap-2 ${tool === 'rectangle' ? 'bg-white/10 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'
+              }`}
           >
             <div className="relative">
               <Square size={20} />
@@ -1286,9 +1305,8 @@ export default function App() {
           )}
           <button
             onClick={handleExport}
-            className={`px-6 py-3 rounded-xl transition-all flex items-center gap-2 shadow-lg active:scale-95 ${
-              copied ? 'bg-emerald-600 shadow-emerald-600/20' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/20'
-            } text-white`}
+            className={`px-6 py-3 rounded-xl transition-all flex items-center gap-2 shadow-lg active:scale-95 ${copied ? 'bg-emerald-600 shadow-emerald-600/20' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/20'
+              } text-white`}
           >
             {copied ? <Plus className="rotate-45" size={18} /> : <Download size={18} />}
             <span className="text-sm font-semibold">{copied ? 'Copied!' : 'Export JSON'}</span>
