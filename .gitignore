@@ -1,0 +1,13 @@
+# Build artifacts and dependencies
+build/
+vendor/
+
+# Python specific
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+.venv/
+venv/
+env/

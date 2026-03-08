@@ -1,0 +1,5 @@
+{
+  "name": "Minimal UI Architect",
+  "description": "A stripped-down UI builder for communicating proportions and layouts to AI models via JSON export.",
+  "requestFramePermissions": []
+}
