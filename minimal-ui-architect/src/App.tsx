@@ -244,14 +244,16 @@ const SortableElement = ({
     transform,
     transition,
     isDragging,
+    isOver,
   } = useSortable({ id: el.id, disabled: isOverlay });
+
+  // Group glow effect when something is dragged over it
+  const isGroupOver = isOver && el.type === 'group' && !isDragging;
 
   // We use Framer Motion for the actual 'sliding' animation during swaps.
   // dnd-kit's transform is used only for the element being actively dragged.
   const motionStyle = {
     transform: isDragging ? CSS.Translate.toString(transform) : undefined,
-    marginLeft: depth * 12,
-    opacity: isDragging ? 0.3 : 1,
     zIndex: isOverlay ? 1000 : (isDragging ? 100 : 1),
     position: 'relative' as const,
     cursor: isDragging ? 'grabbing' : 'grab',
@@ -271,7 +273,7 @@ const SortableElement = ({
         : isHovered
           ? 'border border-white/20'
           : 'border border-white/5'
-        } ${isOverlay ? 'shadow-2xl ring-2 ring-white/20' : ''}`}
+        } ${isOverlay ? 'shadow-2xl ring-2 ring-white/20' : ''} ${isGroupOver ? 'ring-2 ring-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.6)] scale-[1.02]' : ''}`}
       style={{
         borderColor: isSelected || isHovered ? highlightColor : undefined,
         boxShadow: isSelected ? `0 10px 25px -5px ${highlightColor}20` : (isOverlay ? '0 20px 40px rgba(0,0,0,0.5)' : undefined),
@@ -289,8 +291,9 @@ const SortableElement = ({
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
-            className="text-zinc-500 hover:text-white"
+            className="text-zinc-500 hover:text-white flex items-center gap-1.5"
           >
+            {el.type === 'group' && <Folder size={14} className="text-zinc-500" />}
             {el.type === 'group' ? (isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <div className="w-[14px]" />}
           </button>
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
@@ -403,19 +406,25 @@ const SortableElement = ({
     </div>
   );
 
-  if (isOverlay) return content;
+  if (isOverlay) return <div style={motionStyle}>{content}</div>;
 
   return (
     <motion.div
       ref={setNodeRef}
       layout
+      initial={false}
+      animate={{
+        opacity: isDragging ? 0.3 : 1,
+        marginLeft: depth * 12,
+      }}
       transition={{
         type: 'spring',
         stiffness: 500,
         damping: 40,
         mass: 0.8,
         // Disable layout transition for the item being dragged so it follows the pointer 1:1
-        layout: isDragging ? { duration: 0 } : undefined
+        layout: isDragging ? { duration: 0 } : undefined,
+        opacity: { duration: 0.2 }
       }}
       style={motionStyle}
       className="space-y-1"
@@ -491,11 +500,36 @@ export default function App() {
       const newIndex = prev.findIndex((item) => item.id === overId);
 
       if (oldIndex === -1 || newIndex === -1) return prev;
-      if (oldIndex === newIndex) return prev;
 
-      // Optional: Update parentId if hovering over a different hierarchy level
-      // but for simple sliding, arrayMove is usually enough.
-      return arrayMove(prev, oldIndex, newIndex);
+      const newElements = [...prev];
+      const activeEl = newElements[oldIndex];
+      const overEl = newElements[newIndex];
+
+      // Update parentId dynamically for smooth sliding in/out of groups
+      let nextParentId = overEl.parentId;
+
+      // If dragging over a group header, we want to move INTO that group.
+      // We also check if it's NOT the active element itself (already checked above)
+      if (overEl.type === 'group') {
+        nextParentId = overEl.id;
+      }
+
+      if (activeEl.parentId !== nextParentId) {
+        // Change parent and also ensure the group is expanded so we can see it
+        if (nextParentId) {
+          setExpandedIds(prevSet => {
+            if (prevSet.has(nextParentId!)) return prevSet;
+            const nextSet = new Set(prevSet);
+            nextSet.add(nextParentId!);
+            return nextSet;
+          });
+        }
+
+        const updatedActive = { ...activeEl, parentId: nextParentId };
+        newElements[oldIndex] = updatedActive;
+      }
+
+      return arrayMove(newElements, oldIndex, newIndex);
     });
   };
 
@@ -907,8 +941,6 @@ export default function App() {
   };
 
   const handleCreateGroup = () => {
-    if (selectedIds.length === 0) return;
-
     const groupId = `group-${Date.now()}`;
     const maxDepth = elements.length > 0 ? Math.max(...elements.map(el => el.depth)) : 0;
 
@@ -920,6 +952,12 @@ export default function App() {
       expanded: true,
       depth: maxDepth + 1
     };
+
+    if (selectedIds.length === 0) {
+      pushToHistory([...elements, newGroup]);
+      setSelectedIds([groupId]);
+      return;
+    }
 
     const newElements = elements.map(el => {
       if (selectedIds.includes(el.id)) {
@@ -1106,9 +1144,8 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleCreateGroup}
-                    disabled={selectedIds.length === 0}
-                    className="p-1 text-zinc-500 hover:text-white disabled:opacity-20 transition-opacity"
-                    title="Group Selected"
+                    className="p-1 text-zinc-500 hover:text-white transition-opacity"
+                    title="Create Group"
                   >
                     <FolderPlus size={14} />
                   </button>
@@ -1224,7 +1261,7 @@ export default function App() {
                       sideEffects: defaultDropAnimationSideEffects({
                         styles: {
                           active: {
-                            opacity: '0.5',
+                            opacity: '1',
                           },
                         },
                       }),
