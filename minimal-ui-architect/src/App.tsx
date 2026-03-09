@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Stage, Layer, Rect, Transformer, Text, Group } from 'react-konva';
-import { Rectangle, Tool, CanvasElement, GroupData } from './types';
+import { NodeData, Tool, CanvasElement, GroupData } from './types';
 import { Trash2, MousePointer2, Square, Eye, EyeOff, FolderPlus, Hand, ZoomIn, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -182,6 +182,11 @@ export default function App() {
   const [historyIndex, setHistoryIndex] = useState(0);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedIdsRef = useRef(selectedIds);
+  
+  const [clipboard, setClipboard] = useState<CanvasElement[]>([]);
+  const clipboardRef = useRef(clipboard);
+
   const [tool, setTool] = useState<Tool>('select');
   const [prevTool, setPrevTool] = useState<Tool>('select');
   const [tooltip, setTooltip] = useState<{ text: string; visible: boolean }>({ text: '', visible: false });
@@ -200,10 +205,10 @@ export default function App() {
 
   const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
   const [selectionRect, setSelectionRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const [newRectStart, setNewRectStart] = useState<{ x: number; y: number } | null>(null);
-  const [currentDrawingRect, setCurrentDrawingRect] = useState<Rectangle | null>(null);
+  const [newNodeStart, setNewNodeStart] = useState<{ x: number; y: number } | null>(null);
+  const [currentDrawingNode, setCurrentDrawingNode] = useState<NodeData | null>(null);
   const [currentDrawingGroup, setCurrentDrawingGroup] = useState<GroupData | null>(null);
-  const [transformingRect, setTransformingRect] = useState<Rectangle | null>(null);
+  const [transformingNode, setTransformingNode] = useState<NodeData | null>(null);
   const zoomStartRef = useRef<{ clientX: number, scale: number, mousePointTo: { x: number, y: number } } | null>(null);
 
   const lastHueRef = useRef<number>(Math.floor(Math.random() * 360));
@@ -213,6 +218,14 @@ export default function App() {
   useEffect(() => {
     elementsRef.current = elements;
   }, [elements]);
+
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds;
+  }, [selectedIds]);
+
+  useEffect(() => {
+    clipboardRef.current = clipboard;
+  }, [clipboard]);
 
   // --- History Management ---
   const pushToHistory = useCallback((newElements: CanvasElement[]) => {
@@ -241,13 +254,19 @@ export default function App() {
     }
   }, [history, historyIndex]);
 
+  const handleDeleteMultiple = useCallback((ids: string[]) => {
+    const newElements = elementsRef.current.filter(el => !ids.includes(el.id) && (!el.parentId || !ids.includes(el.parentId)));
+    pushToHistory(newElements);
+    setSelectedIds([]);
+  }, [pushToHistory]);
+
   // --- Keyboard Shortcuts ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT') return;
 
-      if ((e.key === 'Backspace' || e.key === 'Delete') && selectedIds.length > 0) {
-        handleDeleteMultiple(selectedIds);
+      if ((e.key === 'Backspace' || e.key === 'Delete') && selectedIdsRef.current.length > 0) {
+        handleDeleteMultiple(selectedIdsRef.current);
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         if (e.shiftKey) redo(); else undo();
@@ -255,17 +274,50 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         redo();
       }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        const selectedElements = elementsRef.current.filter(el => selectedIdsRef.current.includes(el.id));
+        setClipboard(selectedElements);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        if (clipboardRef.current.length > 0) {
+          const newElements = clipboardRef.current.map(el => {
+            const newId = `${el.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            if (el.type === 'node') {
+              const node = el as NodeData;
+              return {
+                ...node,
+                id: newId,
+                name: `${node.name} (Copy)`,
+                nodeX: node.nodeX + 40,
+                nodeY: node.nodeY + 40,
+                x: node.x + 40,
+                y: node.y + 40,
+              };
+            } else {
+              const group = el as GroupData;
+              return {
+                ...group,
+                id: newId,
+                name: `${group.name} (Copy)`,
+                nodeX: group.nodeX + 40,
+                nodeY: group.nodeY + 40,
+              };
+            }
+          });
+          pushToHistory([...elementsRef.current, ...newElements]);
+          setSelectedIds(newElements.map(el => el.id));
+        }
+      }
 
       if (e.code === 'Space' && tool !== 'hand') {
         setPrevTool(tool);
         setTool('hand');
       }
       if (e.key.toLowerCase() === 'z' && tool !== 'zoom') {
-        setPrevTool(tool);
         setTool('zoom');
       }
       if (e.key.toLowerCase() === 'v') setTool('select');
-      if (e.key.toLowerCase() === 'r') setTool('rectangle');
+      if (e.key.toLowerCase() === 'r') setTool('node');
       if (e.key.toLowerCase() === 'g') setTool('group');
       if (e.key.toLowerCase() === 'h') setTool('hand');
     };
@@ -273,9 +325,6 @@ export default function App() {
     const handleKeyUp = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT') return;
       if (e.code === 'Space' && tool === 'hand') {
-        setTool(prevTool);
-      }
-      if (e.key.toLowerCase() === 'z' && tool === 'zoom') {
         setTool(prevTool);
       }
     };
@@ -286,7 +335,7 @@ export default function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [selectedIds, undo, redo, tool, prevTool]);
+  }, [undo, redo, tool, prevTool, pushToHistory, handleDeleteMultiple]);
 
   useEffect(() => {
     if (trRef.current && selectedIds.length > 0) {
@@ -298,9 +347,9 @@ export default function App() {
     }
   }, [selectedIds, elements]);
 
-  const getNextDefaultName = (type: 'rectangle' | 'group') => {
+  const getNextDefaultName = (type: 'node' | 'group') => {
     let i = 1;
-    const prefix = type === 'rectangle' ? 'Rectangle' : 'Group';
+    const prefix = type === 'node' ? 'Node' : 'Group';
     while (elements.some(e => e.name.toLowerCase() === `${prefix.toLowerCase()} ${i}`)) i++;
     return `${prefix} ${i}`;
   };
@@ -332,6 +381,7 @@ export default function App() {
     const stage = e.target.getStage();
     const pos = stage.getPointerPosition();
     const worldPos = transformPoint(pos);
+    const roundedWorldPos = { x: Math.round(worldPos.x), y: Math.round(worldPos.y) };
 
     if (tool === 'zoom') {
       setIsZooming(true);
@@ -340,19 +390,19 @@ export default function App() {
         scale: stageScale,
         mousePointTo: worldPos
       };
-    } else if (tool === 'rectangle') {
+    } else if (tool === 'node') {
       setIsDrawing(true);
-      setNewRectStart(worldPos);
+      setNewNodeStart(roundedWorldPos);
       const maxDepth = elements.length > 0 ? Math.max(...elements.map(el => el.depth)) : 0;
-      setCurrentDrawingRect({
-        id: `rect-temp`,
+      setCurrentDrawingNode({
+        id: `node-temp`,
         name: '',
-        type: 'rectangle',
-        x: worldPos.x, y: worldPos.y, width: 0, height: 0,
-        nodeX: worldPos.x, nodeY: worldPos.y,
-        fill: 'rgba(59, 130, 246, 0.2)',
-        stroke: '#3b82f6',
-        strokeWidth: 2,
+        type: 'node',
+        x: roundedWorldPos.x, y: roundedWorldPos.y, width: 0, height: 0,
+        nodeX: roundedWorldPos.x, nodeY: roundedWorldPos.y,
+        fill: '#808080',
+        stroke: 'transparent',
+        strokeWidth: 0,
         visible: true,
         depth: maxDepth + 1,
         cornerRadius: 0,
@@ -360,13 +410,13 @@ export default function App() {
       });
     } else if (tool === 'group') {
       setIsDrawingGroup(true);
-      setNewRectStart(worldPos);
+      setNewNodeStart(roundedWorldPos);
       const maxDepth = elements.length > 0 ? Math.max(...elements.map(el => el.depth)) : 0;
       setCurrentDrawingGroup({
         id: `group-temp`,
         name: '',
         type: 'group',
-        nodeX: worldPos.x, nodeY: worldPos.y, nodeWidth: 0, nodeHeight: 0,
+        nodeX: roundedWorldPos.x, nodeY: roundedWorldPos.y, nodeWidth: 0, nodeHeight: 0,
         color: '#3b82f6',
         expanded: true,
         visible: true,
@@ -375,8 +425,8 @@ export default function App() {
     } else if (tool === 'select') {
       if (e.target === stage) {
         setIsSelecting(true);
-        setSelectionStart(worldPos);
-        setSelectionRect({ x: worldPos.x, y: worldPos.y, width: 0, height: 0 });
+        setSelectionStart(roundedWorldPos);
+        setSelectionRect({ x: roundedWorldPos.x, y: roundedWorldPos.y, width: 0, height: 0 });
         setSelectedIds([]);
       }
     }
@@ -386,6 +436,7 @@ export default function App() {
     const stage = e.target.getStage();
     const pos = stage.getPointerPosition();
     const worldPos = transformPoint(pos);
+    const roundedWorldPos = { x: Math.round(worldPos.x), y: Math.round(worldPos.y) };
 
     if (isZooming && zoomStartRef.current) {
       const dx = e.evt.clientX - zoomStartRef.current.clientX;
@@ -396,28 +447,28 @@ export default function App() {
       };
       setStageScale(newScale);
       setStagePos(newPos);
-    } else if (isDrawing && newRectStart && currentDrawingRect) {
-      setCurrentDrawingRect({
-        ...currentDrawingRect,
-        x: Math.min(newRectStart.x, worldPos.x),
-        y: Math.min(newRectStart.y, worldPos.y),
-        width: Math.abs(worldPos.x - newRectStart.x),
-        height: Math.abs(worldPos.y - newRectStart.y),
+    } else if (isDrawing && newNodeStart && currentDrawingNode) {
+      setCurrentDrawingNode({
+        ...currentDrawingNode,
+        x: Math.min(newNodeStart.x, roundedWorldPos.x),
+        y: Math.min(newNodeStart.y, roundedWorldPos.y),
+        width: Math.abs(roundedWorldPos.x - newNodeStart.x),
+        height: Math.abs(roundedWorldPos.y - newNodeStart.y),
       });
-    } else if (isDrawingGroup && newRectStart && currentDrawingGroup) {
+    } else if (isDrawingGroup && newNodeStart && currentDrawingGroup) {
       setCurrentDrawingGroup({
         ...currentDrawingGroup,
-        nodeX: Math.min(newRectStart.x, worldPos.x),
-        nodeY: Math.min(newRectStart.y, worldPos.y),
-        nodeWidth: Math.abs(worldPos.x - newRectStart.x),
-        nodeHeight: Math.abs(worldPos.y - newRectStart.y),
+        nodeX: Math.min(newNodeStart.x, roundedWorldPos.x),
+        nodeY: Math.min(newNodeStart.y, roundedWorldPos.y),
+        nodeWidth: Math.abs(roundedWorldPos.x - newNodeStart.x),
+        nodeHeight: Math.abs(roundedWorldPos.y - newNodeStart.y),
       });
     } else if (isSelecting && selectionStart) {
       setSelectionRect({
-        x: Math.min(selectionStart.x, worldPos.x),
-        y: Math.min(selectionStart.y, worldPos.y),
-        width: Math.abs(worldPos.x - selectionStart.x),
-        height: Math.abs(worldPos.y - selectionStart.y),
+        x: Math.min(selectionStart.x, roundedWorldPos.x),
+        y: Math.min(selectionStart.y, roundedWorldPos.y),
+        width: Math.abs(roundedWorldPos.x - selectionStart.x),
+        height: Math.abs(roundedWorldPos.y - selectionStart.y),
       });
     }
   };
@@ -426,22 +477,22 @@ export default function App() {
     if (isZooming) {
       setIsZooming(false);
       zoomStartRef.current = null;
-    } else if (isDrawing && currentDrawingRect) {
-      if (currentDrawingRect.width > 5 && currentDrawingRect.height > 5) {
-        const finalRect: Rectangle = {
-          ...currentDrawingRect,
-          id: `rect-${Date.now()}`,
-          name: getNextDefaultName('rectangle'),
+    } else if (isDrawing && currentDrawingNode) {
+      if (currentDrawingNode.width > 5 && currentDrawingNode.height > 5) {
+        const finalNode: NodeData = {
+          ...currentDrawingNode,
+          id: `node-${Date.now()}`,
+          name: getNextDefaultName('node'),
           highlightColor: generateDistinctColor(),
-          nodeX: currentDrawingRect.x + currentDrawingRect.width + 40,
-          nodeY: currentDrawingRect.y
+          nodeX: currentDrawingNode.x + currentDrawingNode.width + 40,
+          nodeY: currentDrawingNode.y
         };
-        pushToHistory([...elements, finalRect]);
-        setSelectedIds([finalRect.id]);
+        pushToHistory([...elements, finalNode]);
+        setSelectedIds([finalNode.id]);
       }
       setIsDrawing(false);
-      setNewRectStart(null);
-      setCurrentDrawingRect(null);
+      setNewNodeStart(null);
+      setCurrentDrawingNode(null);
     } else if (isDrawingGroup && currentDrawingGroup) {
       if (currentDrawingGroup.nodeWidth > 5 && currentDrawingGroup.nodeHeight > 5) {
         const finalGroup: GroupData = {
@@ -454,12 +505,12 @@ export default function App() {
         setSelectedIds([finalGroup.id]);
       }
       setIsDrawingGroup(false);
-      setNewRectStart(null);
+      setNewNodeStart(null);
       setCurrentDrawingGroup(null);
     } else if (isSelecting && selectionRect) {
       const selected = elements.filter(el => {
-        if (el.type !== 'rectangle') return false;
-        const r = el as Rectangle;
+        if (el.type !== 'node') return false;
+        const r = el as NodeData;
         return r.visible &&
           r.x >= selectionRect.x && r.y >= selectionRect.y &&
           r.x + r.width <= selectionRect.x + selectionRect.width &&
@@ -497,60 +548,40 @@ export default function App() {
     }
   };
 
-  const checkGroupIntersection = useCallback((nodeId: string) => {
-    const currentElements = elementsRef.current;
-    const node = currentElements.find(e => e.id === nodeId);
-    if (!node) return;
-
-    const nodeCenterX = node.nodeX + 96; // approx half of w-48
-    const nodeCenterY = node.nodeY + 20;
-
-    const groups = currentElements.filter(e => e.type === 'group') as GroupData[];
-    groups.sort((a, b) => b.depth - a.depth);
-
-    let foundGroupId: string | undefined = undefined;
-    for (const group of groups) {
-      if (nodeCenterX >= group.nodeX && nodeCenterX <= group.nodeX + group.nodeWidth &&
-        nodeCenterY >= group.nodeY && nodeCenterY <= group.nodeY + group.nodeHeight) {
-        foundGroupId = group.id;
-        break;
-      }
-    }
-
-    if (node.parentId !== foundGroupId) {
-      const newElements = currentElements.map(e => e.id === nodeId ? { ...e, parentId: foundGroupId } : e);
-      pushToHistory(newElements);
-    } else {
-      pushToHistory(currentElements);
-    }
-  }, [pushToHistory]);
-
   const handleNodePointerDown = (e: React.PointerEvent, el: CanvasElement) => {
     if (tool === 'hand' || tool === 'zoom') return;
     e.stopPropagation();
 
-    if (e.shiftKey) {
-      setSelectedIds(prev => prev.includes(el.id) ? prev.filter(id => id !== el.id) : [...prev, el.id]);
-    } else if (!selectedIds.includes(el.id)) {
-      setSelectedIds([el.id]);
+    let currentSelectedIds = selectedIdsRef.current;
+
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      if (currentSelectedIds.includes(el.id)) {
+        currentSelectedIds = currentSelectedIds.filter(id => id !== el.id);
+      } else {
+        currentSelectedIds = [...currentSelectedIds, el.id];
+      }
+      setSelectedIds(currentSelectedIds);
+    } else if (!currentSelectedIds.includes(el.id)) {
+      currentSelectedIds = [el.id];
+      setSelectedIds(currentSelectedIds);
     }
 
     const startX = e.clientX;
     const startY = e.clientY;
-    const startNodeX = el.nodeX;
-    const startNodeY = el.nodeY;
 
-    const children = el.type === 'group' ? elementsRef.current.filter(c => c.parentId === el.id) : [];
-    const childStarts = children.map(c => ({ id: c.id, x: c.nodeX, y: c.nodeY }));
+    const startPositions = elementsRef.current
+      .filter(c => currentSelectedIds.includes(c.id) || (el.type === 'group' && c.parentId === el.id))
+      .map(c => ({ id: c.id, x: c.nodeX, y: c.nodeY }));
 
     const onPointerMove = (moveEvt: PointerEvent) => {
-      const dx = (moveEvt.clientX - startX) / stageScale;
-      const dy = (moveEvt.clientY - startY) / stageScale;
+      const dx = Math.round((moveEvt.clientX - startX) / stageScale);
+      const dy = Math.round((moveEvt.clientY - startY) / stageScale);
 
       setElements(prev => prev.map(p => {
-        if (p.id === el.id) return { ...p, nodeX: startNodeX + dx, nodeY: startNodeY + dy };
-        const childStart = childStarts.find(c => c.id === p.id);
-        if (childStart) return { ...p, nodeX: childStart.x + dx, nodeY: childStart.y + dy };
+        const startPos = startPositions.find(sp => sp.id === p.id);
+        if (startPos) {
+          return { ...p, nodeX: startPos.x + dx, nodeY: startPos.y + dy };
+        }
         return p;
       }));
     };
@@ -558,11 +589,36 @@ export default function App() {
     const onPointerUp = () => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
-      if (el.type !== 'group') {
-        checkGroupIntersection(el.id);
-      } else {
-        pushToHistory(elementsRef.current);
-      }
+      
+      let newElements = elementsRef.current;
+      let changed = false;
+
+      currentSelectedIds.forEach(id => {
+        const node = newElements.find(e => e.id === id);
+        if (node && node.type === 'node') {
+          const nodeCenterX = node.nodeX + 96; // approx half of w-48
+          const nodeCenterY = node.nodeY + 20;
+
+          const groups = newElements.filter(e => e.type === 'group') as GroupData[];
+          groups.sort((a, b) => b.depth - a.depth);
+
+          let foundGroupId: string | undefined = undefined;
+          for (const group of groups) {
+            if (nodeCenterX >= group.nodeX && nodeCenterX <= group.nodeX + group.nodeWidth &&
+              nodeCenterY >= group.nodeY && nodeCenterY <= group.nodeY + group.nodeHeight) {
+              foundGroupId = group.id;
+              break;
+            }
+          }
+
+          if (node.parentId !== foundGroupId) {
+            newElements = newElements.map(e => e.id === id ? { ...e, parentId: foundGroupId } : e);
+            changed = true;
+          }
+        }
+      });
+
+      pushToHistory(newElements);
     };
 
     window.addEventListener('pointermove', onPointerMove);
@@ -579,8 +635,8 @@ export default function App() {
     const startNodeY = group.nodeY;
 
     const onPointerMove = (moveEvt: PointerEvent) => {
-      const dx = (moveEvt.clientX - startX) / stageScale;
-      const dy = (moveEvt.clientY - startY) / stageScale;
+      const dx = Math.round((moveEvt.clientX - startX) / stageScale);
+      const dy = Math.round((moveEvt.clientY - startY) / stageScale);
       let newW = startW;
       let newH = startH;
       let newX = startNodeX;
@@ -610,14 +666,8 @@ export default function App() {
     window.addEventListener('pointerup', onPointerUp);
   };
 
-  const handleDeleteMultiple = (ids: string[]) => {
-    const newElements = elements.filter(el => !ids.includes(el.id) && (!el.parentId || !ids.includes(el.parentId)));
-    pushToHistory(newElements);
-    setSelectedIds([]);
-  };
-
-  const applyConstraints = (rect: Rectangle, updates: Partial<Rectangle>): Rectangle => {
-    const next = { ...rect, ...updates };
+  const applyConstraints = (node: NodeData, updates: Partial<NodeData>): NodeData => {
+    const next = { ...node, ...updates };
     if (next.width < 0) next.width = 0;
     if (next.height < 0) next.height = 0;
     const maxRadius = Math.min(next.width, next.height) / 2;
@@ -631,7 +681,7 @@ export default function App() {
     if (!targetElement) return;
     const newElements = elements.map(el => {
       if (el.id === id) {
-        if (el.type === 'rectangle') return applyConstraints(el as Rectangle, updates as Partial<Rectangle>);
+        if (el.type === 'node') return applyConstraints(el as NodeData, updates as Partial<NodeData>);
         return { ...el, ...updates } as GroupData;
       }
       return el;
@@ -640,11 +690,32 @@ export default function App() {
   };
 
   const handleUpdateEnd = (id: string, updates: Partial<CanvasElement>) => {
-    const targetElement = elements.find(el => el.id === id);
+    const targetElement = elementsRef.current.find(el => el.id === id);
     if (!targetElement) return;
-    const newElements = elements.map(el => {
+    const newElements = elementsRef.current.map(el => {
       if (el.id === id) {
-        if (el.type === 'rectangle') return applyConstraints(el as Rectangle, updates as Partial<Rectangle>);
+        if (el.type === 'node') return applyConstraints(el as NodeData, updates as Partial<NodeData>);
+        return { ...el, ...updates } as GroupData;
+      }
+      return el;
+    });
+    pushToHistory(newElements);
+  };
+
+  const handleBulkUpdate = (ids: string[], updates: Partial<CanvasElement>) => {
+    setElements(prev => prev.map(el => {
+      if (ids.includes(el.id)) {
+        if (el.type === 'node') return applyConstraints(el as NodeData, updates as Partial<NodeData>);
+        return { ...el, ...updates } as GroupData;
+      }
+      return el;
+    }));
+  };
+
+  const handleBulkUpdateEnd = (ids: string[], updates: Partial<CanvasElement>) => {
+    const newElements = elementsRef.current.map(el => {
+      if (ids.includes(el.id)) {
+        if (el.type === 'node') return applyConstraints(el as NodeData, updates as Partial<NodeData>);
         return { ...el, ...updates } as GroupData;
       }
       return el;
@@ -656,11 +727,11 @@ export default function App() {
     const node = e.target;
     const id = node.id();
     const el = elements.find(r => r.id === id);
-    if (el && el.type === 'rectangle') {
-      setTransformingRect({
-        ...(el as Rectangle),
-        x: node.x(),
-        y: node.y(),
+    if (el && el.type === 'node') {
+      setTransformingNode({
+        ...(el as NodeData),
+        x: Math.round(node.x()),
+        y: Math.round(node.y()),
         width: Math.round(node.width() * node.scaleX()),
         height: Math.round(node.height() * node.scaleY()),
       });
@@ -671,37 +742,39 @@ export default function App() {
     const node = e.target;
     const id = node.id();
     const el = elements.find(r => r.id === id);
-    if (el && el.type === 'rectangle') {
+    if (el && el.type === 'node') {
       const updates = {
-        x: node.x(),
-        y: node.y(),
+        x: Math.round(node.x()),
+        y: Math.round(node.y()),
         width: Math.round(node.width() * node.scaleX()),
         height: Math.round(node.height() * node.scaleY()),
       };
       node.scaleX(1);
       node.scaleY(1);
       handleUpdateEnd(id, updates);
-      setTransformingRect(null);
+      setTransformingNode(null);
     }
   };
 
   const handleDragMove = (e: any) => {
     const node = e.target;
     const id = node.id();
-    if (!selectedIds.includes(id)) return;
+    if (!selectedIdsRef.current.includes(id)) return;
 
-    const targetEl = elements.find(el => el.id === id);
-    if (!targetEl || targetEl.type !== 'rectangle') return;
-    const targetRect = targetEl as Rectangle;
+    const targetEl = elementsRef.current.find(el => el.id === id);
+    if (!targetEl || targetEl.type !== 'node') return;
+    const targetNode = targetEl as NodeData;
 
-    const dx = node.x() - targetRect.x;
-    const dy = node.y() - targetRect.y;
+    const newX = Math.round(node.x());
+    const newY = Math.round(node.y());
+    const dx = newX - Math.round(targetNode.x);
+    const dy = newY - Math.round(targetNode.y);
 
-    const newElements = elements.map(el => {
-      if (selectedIds.includes(el.id)) {
-        if (el.type === 'rectangle') {
-          const r = el as Rectangle;
-          return { ...r, x: el.id === id ? node.x() : r.x + dx, y: el.id === id ? node.y() : r.y + dy };
+    const newElements = elementsRef.current.map(el => {
+      if (selectedIdsRef.current.includes(el.id)) {
+        if (el.type === 'node') {
+          const r = el as NodeData;
+          return { ...r, x: el.id === id ? newX : Math.round(r.x + dx), y: el.id === id ? newY : Math.round(r.y + dy) };
         }
       }
       return el;
@@ -718,9 +791,9 @@ export default function App() {
     navigator.clipboard.writeText(json);
   };
 
-  const sortedRects = useMemo(() => elements.filter(e => e.type === 'rectangle').sort((a, b) => a.depth - b.depth), [elements]);
+  const sortedNodes = useMemo(() => elements.filter(e => e.type === 'node').sort((a, b) => a.depth - b.depth), [elements]);
   const groups = useMemo(() => elements.filter(e => e.type === 'group') as GroupData[], [elements]);
-  const nodes = useMemo(() => elements.filter(e => e.type === 'rectangle') as Rectangle[], [elements]);
+  const nodes = useMemo(() => elements.filter(e => e.type === 'node') as NodeData[], [elements]);
 
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0a] text-zinc-300 font-sans overflow-hidden select-none">
@@ -728,8 +801,16 @@ export default function App() {
 
       {/* World Area */}
       <div
-        className="flex-1 relative bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:40px_40px]"
-        style={{ backgroundPosition: `${stagePos.x * stageScale}px ${stagePos.y * stageScale}px`, backgroundSize: `${40 * stageScale}px ${40 * stageScale}px` }}
+        className="flex-1 relative"
+        style={{ 
+          backgroundColor: '#2a2a2a',
+          backgroundImage: `
+            linear-gradient(45deg, #303030 25%, transparent 25%, transparent 75%, #303030 75%, #303030),
+            linear-gradient(45deg, #303030 25%, transparent 25%, transparent 75%, #303030 75%, #303030)
+          `,
+          backgroundSize: `${40 * stageScale}px ${40 * stageScale}px`, 
+          backgroundPosition: `${stagePos.x * stageScale}px ${stagePos.y * stageScale}px, ${stagePos.x * stageScale + 20 * stageScale}px ${stagePos.y * stageScale + 20 * stageScale}px`
+        }}
       >
         {/* Konva Spatial Layer */}
         <Stage
@@ -753,14 +834,14 @@ export default function App() {
           className="absolute inset-0 z-0"
         >
           <Layer>
-            {sortedRects.map((el) => {
-              const rect = el as Rectangle;
+            {sortedNodes.map((el) => {
+              const node = el as NodeData;
               return (
                 <Rect
-                  key={rect.id}
-                  id={rect.id}
-                  {...rect}
-                  cornerRadius={rect.cornerRadius}
+                  key={node.id}
+                  id={node.id}
+                  {...node}
+                  cornerRadius={node.cornerRadius}
                   draggable={tool === 'select'}
                   onDragMove={handleDragMove}
                   onDragEnd={() => pushToHistory(elementsRef.current)}
@@ -768,21 +849,21 @@ export default function App() {
                   onTransformEnd={handleTransformEnd}
                   onClick={(e) => {
                     if (tool !== 'select') return;
-                    if (e.evt.shiftKey) {
-                      setSelectedIds(prev => prev.includes(rect.id) ? prev.filter(id => id !== rect.id) : [...prev, rect.id]);
+                    if (e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey) {
+                      setSelectedIds(prev => prev.includes(node.id) ? prev.filter(id => id !== node.id) : [...prev, node.id]);
                     } else {
-                      setSelectedIds([rect.id]);
+                      setSelectedIds([node.id]);
                     }
                   }}
                   strokeScaleEnabled={false}
-                  stroke={selectedIds.includes(rect.id) ? rect.highlightColor : rect.stroke}
-                  strokeWidth={selectedIds.includes(rect.id) ? 4 / stageScale : rect.strokeWidth}
-                  opacity={rect.visible ? 1 : 0}
+                  stroke={selectedIds.includes(node.id) ? node.highlightColor : 'transparent'}
+                  strokeWidth={selectedIds.includes(node.id) ? 4 / stageScale : 0}
+                  opacity={node.visible ? 1 : 0}
                 />
               );
             })}
 
-            {currentDrawingRect && <Rect {...currentDrawingRect} />}
+            {currentDrawingNode && <Rect {...currentDrawingNode} />}
 
             {selectionRect && (
               <Rect
@@ -797,21 +878,21 @@ export default function App() {
               />
             )}
 
-            {(transformingRect || currentDrawingRect) && (() => {
-              const rect = transformingRect || currentDrawingRect;
-              if (!rect) return null;
+            {(transformingNode || currentDrawingNode) && (() => {
+              const node = transformingNode || currentDrawingNode;
+              if (!node) return null;
               return (
                 <Group>
-                  <Text x={rect.x + rect.width / 2 - 30} y={rect.y - 25 / stageScale} text={`${rect.width} px`} fill={rect.highlightColor} fontSize={11 / stageScale} fontStyle="bold" align="center" />
-                  <Text x={rect.x + rect.width + 10 / stageScale} y={rect.y + rect.height / 2 - 6 / stageScale} text={`${rect.height} px`} fill={rect.highlightColor} fontSize={11 / stageScale} fontStyle="bold" />
+                  <Text x={node.x + node.width / 2 - 30} y={node.y - 25 / stageScale} text={`${node.width} px`} fill={node.highlightColor} fontSize={11 / stageScale} fontStyle="bold" align="center" />
+                  <Text x={node.x + node.width + 10 / stageScale} y={node.y + node.height / 2 - 6 / stageScale} text={`${node.height} px`} fill={node.highlightColor} fontSize={11 / stageScale} fontStyle="bold" />
                 </Group>
               );
             })()}
 
             {selectedIds.length > 0 && tool === 'select' && (() => {
               const selectedEl = elements.find(el => el.id === selectedIds[0]);
-              if (!selectedEl || selectedEl.type !== 'rectangle') return null;
-              const color = (selectedEl as Rectangle).highlightColor || "#3b82f6";
+              if (!selectedEl || selectedEl.type !== 'node') return null;
+              const color = (selectedEl as NodeData).highlightColor || "#3b82f6";
               return (
                 <Transformer
                   ref={trRef}
@@ -858,15 +939,21 @@ export default function App() {
                 <input
                   value={group.name}
                   size={Math.max(1, group.name.length)}
-                  onChange={(e) => handleUpdate(group.id, { name: e.target.value })}
-                  onBlur={(e) => handleUpdateEnd(group.id, { name: e.target.value })}
+                  onChange={(e) => {
+                    if (selectedIds.includes(group.id)) handleBulkUpdate(selectedIds, { name: e.target.value });
+                    else handleUpdate(group.id, { name: e.target.value });
+                  }}
+                  onBlur={(e) => {
+                    if (selectedIds.includes(group.id)) handleBulkUpdateEnd(selectedIds, { name: e.target.value });
+                    else handleUpdateEnd(group.id, { name: e.target.value });
+                  }}
                   className="bg-transparent font-bold outline-none text-white/90 focus:text-white cursor-text min-w-[2ch]"
                   style={{ fontSize: `${14 * textScale}px` }}
                   onPointerDown={e => e.stopPropagation()}
                 />
                 <button
                   onPointerDown={e => e.stopPropagation()}
-                  onClick={() => handleDeleteMultiple([group.id])}
+                  onClick={() => handleDeleteMultiple(selectedIds.includes(group.id) ? selectedIds : [group.id])}
                   className="text-white/50 hover:text-red-400 transition-colors"
                 >
                   <Trash2 size={14 * textScale} />
@@ -912,19 +999,25 @@ export default function App() {
                     boxShadow: selectedIds.includes(node.id) ? `0 0 0 2px ${node.highlightColor}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
                   }}
                 >
-                  {/* Expanding Hover Handle */}
+                  {/* Handle */}
                   <div
-                    className="h-0 group-hover:h-4 transition-all duration-200 cursor-grab w-full"
+                    className="h-8 w-full cursor-grab active:cursor-grabbing flex justify-center items-center transition-colors hover:bg-white/5"
                     style={{ backgroundColor: node.highlightColor + '33' }}
-                  />
+                  >
+                    <div className="w-12 h-2.5 rounded-full bg-[#1a1a1a] border border-white/10 shadow-inner pointer-events-none" />
+                  </div>
+                  
                   <div
                     className="px-3 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
-                    style={{ backgroundColor: node.highlightColor + '33', borderBottom: `1px solid ${node.highlightColor}40` }}
+                    style={{ backgroundColor: node.highlightColor + '1A', borderBottom: `1px solid ${node.highlightColor}40` }}
                   >
                     <div className="flex items-center gap-2 flex-1">
                       <button
                         onPointerDown={e => e.stopPropagation()}
-                        onClick={() => handleUpdateEnd(node.id, { visible: !node.visible })}
+                        onClick={() => {
+                          if (selectedIds.includes(node.id)) handleBulkUpdateEnd(selectedIds, { visible: !node.visible });
+                          else handleUpdateEnd(node.id, { visible: !node.visible });
+                        }}
                         className="text-white/70 hover:text-white transition-colors"
                       >
                         {node.visible ? <Eye size={14 * textScale} /> : <EyeOff size={14 * textScale} />}
@@ -932,8 +1025,14 @@ export default function App() {
                       <input
                         value={node.name}
                         size={Math.max(1, node.name.length)}
-                        onChange={(e) => handleUpdate(node.id, { name: e.target.value })}
-                        onBlur={(e) => handleUpdateEnd(node.id, { name: e.target.value })}
+                        onChange={(e) => {
+                          if (selectedIds.includes(node.id)) handleBulkUpdate(selectedIds, { name: e.target.value });
+                          else handleUpdate(node.id, { name: e.target.value });
+                        }}
+                        onBlur={(e) => {
+                          if (selectedIds.includes(node.id)) handleBulkUpdateEnd(selectedIds, { name: e.target.value });
+                          else handleUpdateEnd(node.id, { name: e.target.value });
+                        }}
                         className="bg-transparent font-bold outline-none text-white/90 focus:text-white cursor-text min-w-[2ch]"
                         style={{ fontSize: `${14 * textScale}px` }}
                         onPointerDown={e => e.stopPropagation()}
@@ -944,15 +1043,21 @@ export default function App() {
                         <input
                           type="color"
                           value={node.highlightColor}
-                          onChange={(e) => handleUpdate(node.id, { highlightColor: e.target.value })}
-                          onBlur={(e) => handleUpdateEnd(node.id, { highlightColor: e.target.value })}
+                          onChange={(e) => {
+                            if (selectedIds.includes(node.id)) handleBulkUpdate(selectedIds, { highlightColor: e.target.value });
+                            else handleUpdate(node.id, { highlightColor: e.target.value });
+                          }}
+                          onBlur={(e) => {
+                            if (selectedIds.includes(node.id)) handleBulkUpdateEnd(selectedIds, { highlightColor: e.target.value });
+                            else handleUpdateEnd(node.id, { highlightColor: e.target.value });
+                          }}
                           className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                           onPointerDown={e => e.stopPropagation()}
                         />
                       </div>
                       <button
                         onPointerDown={e => e.stopPropagation()}
-                        onClick={() => handleDeleteMultiple([node.id])}
+                        onClick={() => handleDeleteMultiple(selectedIds.includes(node.id) ? selectedIds : [node.id])}
                         className="text-white/50 hover:text-red-400 transition-colors"
                       >
                         <Trash2 size={14 * textScale} />
@@ -961,12 +1066,12 @@ export default function App() {
                   </div>
 
                   <div className="p-3 flex flex-col gap-2 cursor-default" onPointerDown={e => e.stopPropagation()}>
-                    <ScrubbableInput textScale={textScale} label="Width" value={node.width} onChange={v => handleUpdate(node.id, { width: v })} onCommit={v => handleUpdateEnd(node.id, { width: v })} tooltip="Width of rectangle" showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                    <ScrubbableInput textScale={textScale} label="Height" value={node.height} onChange={v => handleUpdate(node.id, { height: v })} onCommit={v => handleUpdateEnd(node.id, { height: v })} tooltip="Height of rectangle" showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                    <ScrubbableInput textScale={textScale} label="X Pos" value={node.x} onChange={v => handleUpdate(node.id, { x: v })} onCommit={v => handleUpdateEnd(node.id, { x: v })} tooltip="Horizontal position" showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                    <ScrubbableInput textScale={textScale} label="Y Pos" value={node.y} onChange={v => handleUpdate(node.id, { y: v })} onCommit={v => handleUpdateEnd(node.id, { y: v })} tooltip="Vertical position" showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                    <ScrubbableInput textScale={textScale} label="Depth" value={node.depth} onChange={v => handleUpdate(node.id, { depth: v })} onCommit={v => handleUpdateEnd(node.id, { depth: v })} tooltip="Layer rendering order" showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                    <ScrubbableInput textScale={textScale} label="Radius" value={node.cornerRadius} onChange={v => handleUpdate(node.id, { cornerRadius: v })} onCommit={v => handleUpdateEnd(node.id, { cornerRadius: v })} tooltip="Corner roundness" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                    <ScrubbableInput textScale={textScale} label="Width" value={node.width} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { width: v }) : handleUpdate(node.id, { width: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { width: v }) : handleUpdateEnd(node.id, { width: v })} tooltip="Width of node" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                    <ScrubbableInput textScale={textScale} label="Height" value={node.height} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { height: v }) : handleUpdate(node.id, { height: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { height: v }) : handleUpdateEnd(node.id, { height: v })} tooltip="Height of node" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                    <ScrubbableInput textScale={textScale} label="X Pos" value={node.x} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { x: v }) : handleUpdate(node.id, { x: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { x: v }) : handleUpdateEnd(node.id, { x: v })} tooltip="Horizontal position" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                    <ScrubbableInput textScale={textScale} label="Y Pos" value={node.y} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { y: v }) : handleUpdate(node.id, { y: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { y: v }) : handleUpdateEnd(node.id, { y: v })} tooltip="Vertical position" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                    <ScrubbableInput textScale={textScale} label="Depth" value={node.depth} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { depth: v }) : handleUpdate(node.id, { depth: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { depth: v }) : handleUpdateEnd(node.id, { depth: v })} tooltip="Layer rendering order" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                    <ScrubbableInput textScale={textScale} label="Radius" value={node.cornerRadius} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { cornerRadius: v }) : handleUpdate(node.id, { cornerRadius: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { cornerRadius: v }) : handleUpdateEnd(node.id, { cornerRadius: v })} tooltip="Corner roundness" showTooltip={showTooltip} hideTooltip={hideTooltip} />
                   </div>
                 </div>
               </div>
@@ -984,7 +1089,7 @@ export default function App() {
         <ToolButton icon={<Hand size={18} />} label="Pan (H / Space)" active={tool === 'hand'} onClick={() => setTool('hand')} />
         <ToolButton icon={<ZoomIn size={18} />} label="Zoom (Z)" active={tool === 'zoom'} onClick={() => setTool('zoom')} />
         <div className="w-px h-6 bg-white/10 mx-2" />
-        <ToolButton icon={<Square size={18} />} label="Rectangle (R)" active={tool === 'rectangle'} onClick={() => setTool('rectangle')} />
+        <ToolButton icon={<Square size={18} />} label="Node (R)" active={tool === 'node'} onClick={() => setTool('node')} />
         <ToolButton icon={<FolderPlus size={18} />} label="Group (G)" active={tool === 'group'} onClick={() => setTool('group')} />
         <div className="w-px h-6 bg-white/10 mx-2" />
         <ToolButton icon={<Settings size={18} />} label="Settings" active={isSettingsOpen} onClick={() => setIsSettingsOpen(!isSettingsOpen)} />

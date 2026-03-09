@@ -1,4 +1,4 @@
-export type ElementType = 'rectangle' | 'group';
+export type ElementType = 'node' | 'group';
 
 export interface BaseElement {
   id: string;
@@ -11,8 +11,8 @@ export interface BaseElement {
   nodeY: number;
 }
 
-export interface Rectangle extends BaseElement {
-  type: 'rectangle';
+export interface NodeData extends BaseElement {
+  type: 'node';
   x: number;
   y: number;
   width: number;
@@ -32,6 +32,6 @@ export interface GroupData extends BaseElement {
   color: string;
 }
 
-export type CanvasElement = Rectangle | GroupData;
+export type CanvasElement = NodeData | GroupData;
 
-export type Tool = 'select' | 'rectangle' | 'group' | 'hand' | 'zoom';
+export type Tool = 'select' | 'node' | 'group' | 'hand' | 'zoom';
