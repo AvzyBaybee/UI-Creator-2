@@ -74,36 +74,15 @@ const CursorTooltip = ({ text, visible }: { text: string; visible: boolean }) =>
   );
 };
 
-// --- Scrubbable Number Input Component ---
-interface ScrubbableInputProps {
-  value: number;
-  onChange: (val: number) => void;
-  onCommit: (val: number) => void;
-  label: string;
-  tooltip: string;
-  showTooltip: (text: string) => void;
-  hideTooltip: () => void;
-  onHoverStart?: () => void;
-  onHoverEnd?: () => void;
-  onInteractionStart?: () => void;
-  onInteractionEnd?: () => void;
-  textScale: number;
-  min?: number;
-  max?: number;
-}
-
-const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
-  value, onChange, onCommit, label, tooltip, showTooltip, hideTooltip, onHoverStart, onHoverEnd, onInteractionStart, onInteractionEnd, textScale, min, max
-}) => {
+// --- Property Row Component ---
+const PropertyRow = ({ label, value, onChange, onCommit, min, max, textScale, tooltip, showTooltip, hideTooltip, onInteractionStart, onInteractionEnd }: any) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState(value.toString());
   const isDragging = useRef(false);
   const startVal = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setInputValue(value.toString());
-  }, [value]);
+  useEffect(() => { setInputValue(value.toString()); }, [value]);
 
   useEffect(() => {
     const handleLockChange = () => {
@@ -115,7 +94,7 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
     };
     document.addEventListener('pointerlockchange', handleLockChange);
     return () => document.removeEventListener('pointerlockchange', handleLockChange);
-  }, []);
+  }, [onCommit, onInteractionEnd]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -134,7 +113,6 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
           containerRef.current?.requestPointerLock();
         }
       }
-
       if (isDragging.current) {
         let movementX = me.movementX || 0;
         if (Math.abs(movementX) > 500) movementX = 0;
@@ -151,9 +129,7 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
         setIsEditing(true);
       } else {
         onCommit(Math.round(startVal.current));
-        if (document.pointerLockElement === containerRef.current) {
-          document.exitPointerLock();
-        }
+        if (document.pointerLockElement === containerRef.current) document.exitPointerLock();
       }
       isDragging.current = false;
       onInteractionEnd?.();
@@ -178,21 +154,15 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
     onInteractionEnd?.();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleBlur();
-    }
-  };
-
   return (
-    <div className="flex items-center gap-2 group/scrub flex-1" onMouseDown={e => e.stopPropagation()}>
+    <div className="flex items-center gap-2 group/scrub w-full" onMouseDown={e => e.stopPropagation()}>
       <label
-        className="text-zinc-400 flex items-center gap-1 cursor-help select-none"
+        className="text-zinc-400 w-28 text-left cursor-help select-none shrink-0"
         style={{ fontSize: `${11 * textScale}px` }}
-        onMouseEnter={() => { showTooltip(tooltip); onHoverStart?.(); }}
-        onMouseLeave={() => { hideTooltip(); onHoverEnd?.(); }}
+        onMouseEnter={() => showTooltip(tooltip)}
+        onMouseLeave={hideTooltip}
       >
-        {label}
+        {label}:
       </label>
       {isEditing ? (
         <input
@@ -201,18 +171,16 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
+          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
           style={{ fontSize: `${11 * textScale}px` }}
-          className="min-w-[2rem] text-left bg-transparent text-white outline-none border-b border-blue-500"
+          className="w-12 text-left bg-transparent text-white outline-none border-b border-blue-500"
         />
       ) : (
         <div
           ref={containerRef}
           onMouseDown={handleMouseDown}
-          onMouseEnter={onHoverStart}
-          onMouseLeave={onHoverEnd}
           style={{ fontSize: `${11 * textScale}px` }}
-          className="min-w-[2rem] text-left cursor-ew-resize select-none text-zinc-300 hover:text-white transition-colors bg-transparent border-none outline-none"
+          className="w-12 text-left cursor-ew-resize select-none text-zinc-300 hover:text-white"
         >
           {Math.round(value)}
         </div>
@@ -221,37 +189,147 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
   );
 };
 
-// --- Custom Slider Component ---
-const CustomSlider = ({ value, min, max, onChange, onCommit, onInteractionStart, onInteractionEnd }: { value: number, min: number, max: number, onChange: (v: number) => void, onCommit: (v: number) => void, onInteractionStart?: () => void, onInteractionEnd?: () => void }) => {
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.shiftKey) {
-      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
-        e.preventDefault();
-        const newVal = Math.min(max, value + 10);
-        onChange(newVal);
-        onCommit(newVal);
-      } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
-        e.preventDefault();
-        const newVal = Math.max(min, value - 10);
-        onChange(newVal);
-        onCommit(newVal);
+// --- Color Row Component ---
+const ColorRow = ({ label, value, onChange, onCommit, min, max, textScale, highlightColor, onInteractionStart, onInteractionEnd }: any) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [inputValue, setInputValue] = useState(value.toString());
+  const isDragging = useRef(false);
+  const startVal = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setInputValue(value.toString()); }, [value]);
+
+  useEffect(() => {
+    const handleLockChange = () => {
+      if (document.pointerLockElement !== containerRef.current && isDragging.current) {
+        isDragging.current = false;
+        onCommit(Math.round(startVal.current));
+        onInteractionEnd?.();
       }
+    };
+    document.addEventListener('pointerlockchange', handleLockChange);
+    return () => document.removeEventListener('pointerlockchange', handleLockChange);
+  }, [onCommit, onInteractionEnd]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isEditing) return;
+    const initialX = e.clientX;
+    const initialY = e.clientY;
+    isDragging.current = false;
+    startVal.current = value;
+    onInteractionStart?.();
+
+    const handleMouseMove = (me: MouseEvent) => {
+      if (!isDragging.current) {
+        const dist = Math.sqrt(Math.pow(me.clientX - initialX, 2) + Math.pow(me.clientY - initialY, 2));
+        if (dist > 3) {
+          isDragging.current = true;
+          containerRef.current?.requestPointerLock();
+        }
+      }
+      if (isDragging.current) {
+        let movementX = me.movementX || 0;
+        if (Math.abs(movementX) > 500) movementX = 0;
+        let nextVal = startVal.current + movementX;
+        if (min !== undefined) nextVal = Math.max(min, nextVal);
+        if (max !== undefined) nextVal = Math.min(max, nextVal);
+        startVal.current = nextVal;
+        onChange(Math.round(startVal.current));
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (!isDragging.current) {
+        setIsEditing(true);
+      } else {
+        onCommit(Math.round(startVal.current));
+        if (document.pointerLockElement === containerRef.current) document.exitPointerLock();
+      }
+      isDragging.current = false;
+      onInteractionEnd?.();
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleBlur = () => {
+    setIsEditing(false);
+    let parsed = parseInt(inputValue);
+    if (!isNaN(parsed)) {
+      if (min !== undefined) parsed = Math.max(min, parsed);
+      if (max !== undefined) parsed = Math.min(max, parsed);
+      onCommit(parsed);
+    } else {
+      setInputValue(value.toString());
     }
+    onInteractionEnd?.();
   };
 
   return (
-    <input 
-      type="range" min={min} max={max} 
-      value={value}
-      onMouseDown={onInteractionStart}
-      onChange={e => onChange(parseInt(e.target.value))}
-      onMouseUp={e => {
-        onCommit(parseInt((e.target as HTMLInputElement).value));
-        onInteractionEnd?.();
-      }}
-      onKeyDown={handleKeyDown}
-      className="flex-1 accent-blue-500"
-    />
+    <div className="flex items-center gap-2 group/scrub w-full" onMouseDown={e => e.stopPropagation()}>
+      <label className="text-zinc-400 w-3 text-left select-none shrink-0" style={{ fontSize: `${11 * textScale}px` }}>{label}:</label>
+      {isEditing ? (
+        <input 
+          autoFocus 
+          type="text" 
+          value={inputValue} 
+          onChange={(e) => setInputValue(e.target.value)} 
+          onBlur={handleBlur} 
+          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} 
+          style={{ fontSize: `${11 * textScale}px` }} 
+          className="w-8 text-left bg-transparent text-white outline-none border-b border-blue-500 shrink-0"
+        />
+      ) : (
+        <div 
+          ref={containerRef} 
+          onMouseDown={handleMouseDown} 
+          style={{ fontSize: `${11 * textScale}px` }} 
+          className="w-8 text-left cursor-ew-resize select-none text-zinc-300 hover:text-white shrink-0"
+        >
+          {Math.round(value)}
+        </div>
+      )}
+      <input 
+        type="range" min={min} max={max} value={value} 
+        onMouseDown={onInteractionStart} 
+        onChange={e => onChange(parseInt(e.target.value))} 
+        onMouseUp={e => { onCommit(parseInt(e.target.value)); onInteractionEnd?.(); }} 
+        onKeyDown={(e) => {
+          if (e.shiftKey) {
+            if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); const newVal = Math.min(max, value + 10); onChange(newVal); onCommit(newVal); }
+            else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { e.preventDefault(); const newVal = Math.max(min, value - 10); onChange(newVal); onCommit(newVal); }
+          }
+        }}
+        style={{ accentColor: highlightColor }}
+        className="flex-1 min-w-0"
+      />
+    </div>
+  );
+};
+
+// --- Node Name Input ---
+const NodeNameInput = ({ name, onChange, onCommit, textScale }: any) => {
+  const [isFocused, setIsFocused] = useState(false);
+  const isLong = name.length > 12;
+  
+  return (
+    <div className="overflow-hidden flex-1 relative flex items-center mr-2">
+      <input
+        value={name}
+        size={Math.max(1, name.length)}
+        onChange={onChange}
+        onBlur={(e) => { setIsFocused(false); onCommit(e); }}
+        onFocus={() => setIsFocused(true)}
+        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+        className={`bg-transparent font-bold outline-none text-white/90 focus:text-white cursor-text min-w-full transition-transform ${(!isFocused && isLong) ? 'group-hover/node:animate-marquee' : ''}`}
+        style={{ fontSize: `${14 * textScale}px` }}
+        onPointerDown={e => e.stopPropagation()}
+      />
+    </div>
   );
 };
 
@@ -300,6 +378,7 @@ const ColorPicker2D = ({ node, onChange, onCommit }: { node: ColorNodeData, onCh
     window.addEventListener('pointerup', onPointerUp);
   };
 
+  // Force visual rendering to HSB regardless of mode
   const getBg = () => `hsl(${node.channel1}, 100%, 50%)`;
   const getOverlays = () => `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent)`;
 
@@ -333,7 +412,6 @@ export default function App() {
   const [tooltip, setTooltip] = useState<{ text: string; visible: boolean }>({ text: '', visible: false });
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, worldX: number, worldY: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [interactingId, setInteractingId] = useState<string | null>(null);
 
   const [uiScale, setUiScale] = useState(1);
@@ -975,6 +1053,15 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0a] text-zinc-300 font-sans overflow-hidden select-none">
+      <style>{`
+        @keyframes marquee-scroll {
+          0%, 15% { transform: translateX(0); }
+          85%, 100% { transform: translateX(calc(120px - 100%)); }
+        }
+        .animate-marquee {
+          animation: marquee-scroll 4s linear infinite alternate;
+        }
+      `}</style>
       <CursorTooltip text={tooltip.text} visible={tooltip.visible} />
 
       {/* World Area */}
@@ -1055,7 +1142,7 @@ export default function App() {
                   }}
                   strokeScaleEnabled={false}
                   stroke={selectedIds.includes(node.id) ? node.highlightColor : 'transparent'}
-                  strokeWidth={selectedIds.includes(node.id) && transformingNode?.id !== node.id && interactingId !== node.id ? 2 / stageScale : 0}
+                  strokeWidth={selectedIds.includes(node.id) && transformingNode?.id !== node.id && interactingId !== node.id ? 1 : 0}
                   opacity={node.visible ? 1 : 0}
                 />
               );
@@ -1082,13 +1169,10 @@ export default function App() {
               const sourceNode = elements.find(e => e.id === targetNode.colorNodeId) as ColorNodeData | undefined;
               if (!sourceNode) return null;
               
-              const isSourceHovered = hoveredNodeId === sourceNode.id;
-              const isTargetHovered = hoveredNodeId === targetNode.id;
-              
               const startX = sourceNode.nodeX + (192 * uiScale);
-              const startY = sourceNode.nodeY + (72 * uiScale) - (isSourceHovered ? 16 * uiScale : 0);
+              const startY = sourceNode.nodeY + (72 * uiScale);
               const endX = targetNode.nodeX;
-              const endY = targetNode.nodeY + (72 * uiScale) - (isTargetHovered ? 16 * uiScale : 0);
+              const endY = targetNode.nodeY + (72 * uiScale);
 
               return (
                 <Path
@@ -1097,7 +1181,8 @@ export default function App() {
                   strokeLinearGradientStartPoint={{ x: startX, y: startY }}
                   strokeLinearGradientEndPoint={{ x: endX, y: endY }}
                   strokeLinearGradientColorStops={[0, sourceNode.highlightColor || '#3b82f6', 1, targetNode.highlightColor || '#3b82f6']}
-                  strokeWidth={4 / stageScale}
+                  strokeWidth={3}
+                  strokeScaleEnabled={false}
                   lineCap="round"
                 />
               );
@@ -1107,9 +1192,10 @@ export default function App() {
               <Path
                 data={`M ${drawingWire.startX} ${drawingWire.startY} C ${drawingWire.startX + 60} ${drawingWire.startY}, ${drawingWire.currentX - 60} ${drawingWire.currentY}, ${drawingWire.currentX} ${drawingWire.currentY}`}
                 stroke="#3b82f6"
-                strokeWidth={4 / stageScale}
+                strokeWidth={3}
+                strokeScaleEnabled={false}
                 lineCap="round"
-                dash={[10 / stageScale, 10 / stageScale]}
+                dash={[10, 10]}
               />
             )}
 
@@ -1134,7 +1220,6 @@ export default function App() {
                   boundBoxFunc={(oldBox, newBox) => (newBox.width < 5 || newBox.height < 5) ? oldBox : newBox}
                   rotateEnabled={false}
                   keepRatio={false}
-                  shiftBehavior="invertRatio"
                   anchorStroke={color}
                   anchorFill={color}
                   anchorSize={8 / stageScale}
@@ -1173,28 +1258,26 @@ export default function App() {
                 className="absolute top-0 left-0 right-0 h-10 px-4 flex items-center justify-between cursor-grab active:cursor-grabbing rounded-t-[14px]"
                 style={{ backgroundColor: group.color + '26', borderBottom: `1px solid ${group.color}40` }}
               >
-                <input
-                  value={group.name}
-                  size={Math.max(1, group.name.length)}
-                  onChange={(e) => {
-                    if (selectedIds.includes(group.id)) handleBulkUpdate(selectedIds, { name: e.target.value });
-                    else handleUpdate(group.id, { name: e.target.value });
-                  }}
-                  onBlur={(e) => {
-                    if (selectedIds.includes(group.id)) handleBulkUpdateEnd(selectedIds, { name: e.target.value });
-                    else handleUpdateEnd(group.id, { name: e.target.value });
-                  }}
-                  className="bg-transparent font-bold outline-none text-white/90 focus:text-white cursor-text min-w-[2ch]"
-                  style={{ fontSize: `${14 * textScale}px` }}
-                  onPointerDown={e => e.stopPropagation()}
-                />
-                <button
-                  onPointerDown={e => e.stopPropagation()}
-                  onClick={() => handleDeleteMultiple(selectedIds.includes(group.id) ? selectedIds : [group.id])}
-                  className="text-white/50 hover:text-red-400 transition-colors"
-                >
-                  <Trash2 size={14 * textScale} />
-                </button>
+                <NodeNameInput name={group.name} onChange={(e: any) => { if (selectedIds.includes(group.id)) handleBulkUpdate(selectedIds, { name: e.target.value }); else handleUpdate(group.id, { name: e.target.value }); }} onCommit={(e: any) => { if (selectedIds.includes(group.id)) handleBulkUpdateEnd(selectedIds, { name: e.target.value }); else handleUpdateEnd(group.id, { name: e.target.value }); }} textScale={textScale} />
+                <div className="flex items-center gap-2">
+                  <div className="relative rounded-full border border-white/20 cursor-pointer" style={{ backgroundColor: group.color, width: 16 * textScale, height: 16 * textScale }}>
+                    <input
+                      type="color"
+                      value={group.color}
+                      onChange={(e) => { if (selectedIds.includes(group.id)) handleBulkUpdate(selectedIds, { color: e.target.value }); else handleUpdate(group.id, { color: e.target.value }); }}
+                      onBlur={(e) => { if (selectedIds.includes(group.id)) handleBulkUpdateEnd(selectedIds, { color: e.target.value }); else handleUpdateEnd(group.id, { color: e.target.value }); }}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      onPointerDown={e => e.stopPropagation()}
+                    />
+                  </div>
+                  <button
+                    onPointerDown={e => e.stopPropagation()}
+                    onClick={() => handleDeleteMultiple(selectedIds.includes(group.id) ? selectedIds : [group.id])}
+                    className="text-white/50 hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 size={14 * textScale} />
+                  </button>
+                </div>
               </div>
               {/* Resize Handles */}
               <div className="absolute -right-2 top-0 bottom-0 w-4 cursor-ew-resize" onPointerDown={e => handleGroupResizePointerDown(e, group, 'e')} />
@@ -1227,35 +1310,51 @@ export default function App() {
                 transform: `scale(${uiScale})`,
                 transformOrigin: 'top left'
               }}
-              onPointerDown={(e) => handleNodePointerDown(e, colorNode)}
-              onMouseEnter={() => setHoveredNodeId(colorNode.id)}
-              onMouseLeave={() => setHoveredNodeId(null)}
             >
-              <div className="group transition-transform duration-200 relative">
+              <div className="group/node relative">
                 
-                {/* Handle Cutout SVG */}
-                <svg width="192" height="32" className={`absolute bottom-full left-0 transition-all duration-200 ease-out origin-bottom cursor-grab active:cursor-grabbing ${hoveredNodeId === colorNode.id ? 'opacity-100 scale-y-100' : 'opacity-0 scale-y-0'}`}>
-                  <path fillRule="evenodd" clipRule="evenodd" d="M0 16C0 7.16344 7.16344 0 16 0H176C184.837 0 192 7.16344 192 16V32H0V16ZM64 12C64 8.68629 66.6863 6 70 6H122C125.314 6 128 8.68629 128 12C128 15.3137 125.314 18 122 18H70C66.6863 18 64 15.3137 64 12Z" fill={colorNode.highlightColor || '#3b82f6'} />
-                </svg>
+                {/* Invisible Handle Hit Area */}
+                <div className="absolute bottom-full left-0 w-full h-8 z-10 cursor-grab active:cursor-grabbing" onPointerDown={(e) => handleNodePointerDown(e, colorNode)} />
+                
+                {/* Visible Handle */}
+                <div 
+                  className="absolute bottom-full left-0 w-full h-6 rounded-t-xl transition-all duration-200 ease-out origin-bottom opacity-0 scale-y-0 group-hover/node:opacity-100 group-hover/node:scale-y-100 pointer-events-none"
+                  style={{ backgroundColor: colorNode.highlightColor || '#3b82f6' }}
+                >
+                  <div className="w-12 h-1.5 bg-black/20 rounded-full mx-auto mt-2" />
+                </div>
 
                 <div
-                  className="w-48 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl transition-shadow relative z-10"
+                  className="w-48 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl transition-shadow relative z-20"
                   style={{
                     boxShadow: selectedIds.includes(colorNode.id) ? `0 0 0 2px ${colorNode.highlightColor || '#3b82f6'}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
                   }}
+                  onPointerDown={(e) => handleNodePointerDown(e, colorNode)}
                 >
                   <div
                     className="px-3 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
                     style={{ backgroundColor: (colorNode.highlightColor || '#3b82f6') + '1A', borderBottom: `1px solid ${colorNode.highlightColor || '#3b82f6'}40`, borderTopLeftRadius: 12, borderTopRightRadius: 12 }}
                   >
-                    <span className="font-bold text-white/90 text-sm">Color</span>
-                    <button
-                      onPointerDown={e => e.stopPropagation()}
-                      onClick={() => handleDeleteMultiple(selectedIds.includes(colorNode.id) ? selectedIds : [colorNode.id])}
-                      className="text-white/50 hover:text-red-400 transition-colors"
-                    >
-                      <Trash2 size={14 * textScale} />
-                    </button>
+                    <NodeNameInput name={colorNode.name} onChange={(e: any) => { if (selectedIds.includes(colorNode.id)) handleBulkUpdate(selectedIds, { name: e.target.value }); else handleUpdate(colorNode.id, { name: e.target.value }); }} onCommit={(e: any) => { if (selectedIds.includes(colorNode.id)) handleBulkUpdateEnd(selectedIds, { name: e.target.value }); else handleUpdateEnd(colorNode.id, { name: e.target.value }); }} textScale={textScale} />
+                    <div className="flex items-center gap-2">
+                      <div className="relative rounded-full border border-white/20 cursor-pointer shrink-0" style={{ backgroundColor: colorNode.highlightColor || '#3b82f6', width: 16 * textScale, height: 16 * textScale }}>
+                        <input
+                          type="color"
+                          value={colorNode.highlightColor || '#3b82f6'}
+                          onChange={(e) => { if (selectedIds.includes(colorNode.id)) handleBulkUpdate(selectedIds, { highlightColor: e.target.value }); else handleUpdate(colorNode.id, { highlightColor: e.target.value }); }}
+                          onBlur={(e) => { if (selectedIds.includes(colorNode.id)) handleBulkUpdateEnd(selectedIds, { highlightColor: e.target.value }); else handleUpdateEnd(colorNode.id, { highlightColor: e.target.value }); }}
+                          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                          onPointerDown={e => e.stopPropagation()}
+                        />
+                      </div>
+                      <button
+                        onPointerDown={e => e.stopPropagation()}
+                        onClick={() => handleDeleteMultiple(selectedIds.includes(colorNode.id) ? selectedIds : [colorNode.id])}
+                        className="text-white/50 hover:text-red-400 transition-colors shrink-0"
+                      >
+                        <Trash2 size={14 * textScale} />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="p-3 flex flex-col gap-3 cursor-default" onPointerDown={e => e.stopPropagation()}>
@@ -1275,18 +1374,9 @@ export default function App() {
 
                     {/* Sliders */}
                     <div className="flex flex-col gap-2">
-                      <div className="flex items-center gap-2 group/scrub">
-                         <ScrubbableInput textScale={textScale} label={colorNode.colorMode[0]} value={colorNode.channel1} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 360} onChange={v => handleUpdate(colorNode.id, { channel1: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel1: v })} tooltip="" showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
-                         <CustomSlider value={colorNode.channel1} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 360} onChange={v => handleUpdate(colorNode.id, { channel1: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel1: v })} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
-                      </div>
-                      <div className="flex items-center gap-2 group/scrub">
-                         <ScrubbableInput textScale={textScale} label={colorNode.colorMode[1]} value={colorNode.channel2} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 100} onChange={v => handleUpdate(colorNode.id, { channel2: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel2: v })} tooltip="" showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
-                         <CustomSlider value={colorNode.channel2} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 100} onChange={v => handleUpdate(colorNode.id, { channel2: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel2: v })} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
-                      </div>
-                      <div className="flex items-center gap-2 group/scrub">
-                         <ScrubbableInput textScale={textScale} label={colorNode.colorMode[2]} value={colorNode.channel3} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 100} onChange={v => handleUpdate(colorNode.id, { channel3: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel3: v })} tooltip="" showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
-                         <CustomSlider value={colorNode.channel3} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 100} onChange={v => handleUpdate(colorNode.id, { channel3: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel3: v })} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
-                      </div>
+                      <ColorRow textScale={textScale} label={colorNode.colorMode[0]} value={colorNode.channel1} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 360} highlightColor={colorNode.highlightColor || '#3b82f6'} onChange={(v: number) => handleUpdate(colorNode.id, { channel1: v })} onCommit={(v: number) => handleUpdateEnd(colorNode.id, { channel1: v })} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <ColorRow textScale={textScale} label={colorNode.colorMode[1]} value={colorNode.channel2} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 100} highlightColor={colorNode.highlightColor || '#3b82f6'} onChange={(v: number) => handleUpdate(colorNode.id, { channel2: v })} onCommit={(v: number) => handleUpdateEnd(colorNode.id, { channel2: v })} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <ColorRow textScale={textScale} label={colorNode.colorMode[2]} value={colorNode.channel3} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 100} highlightColor={colorNode.highlightColor || '#3b82f6'} onChange={(v: number) => handleUpdate(colorNode.id, { channel3: v })} onCommit={(v: number) => handleUpdateEnd(colorNode.id, { channel3: v })} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
                     </div>
                   </div>
                 </div>
@@ -1324,55 +1414,45 @@ export default function App() {
                   transform: `scale(${uiScale})`,
                   transformOrigin: 'top left'
                 }}
-                onPointerDown={(e) => handleNodePointerDown(e, node)}
-                onMouseEnter={() => setHoveredNodeId(node.id)}
-                onMouseLeave={() => setHoveredNodeId(null)}
               >
-                <div className="group transition-transform duration-200 relative">
+                <div className="group/node relative">
                   
-                  {/* Handle Cutout SVG */}
-                  <svg width="192" height="32" className={`absolute bottom-full left-0 transition-all duration-200 ease-out origin-bottom cursor-grab active:cursor-grabbing ${hoveredNodeId === node.id ? 'opacity-100 scale-y-100' : 'opacity-0 scale-y-0'}`}>
-                    <path fillRule="evenodd" clipRule="evenodd" d="M0 16C0 7.16344 7.16344 0 16 0H176C184.837 0 192 7.16344 192 16V32H0V16ZM64 12C64 8.68629 66.6863 6 70 6H122C125.314 6 128 8.68629 128 12C128 15.3137 125.314 18 122 18H70C66.6863 18 64 15.3137 64 12Z" fill={node.highlightColor} />
-                  </svg>
+                  {/* Invisible Handle Hit Area */}
+                  <div className="absolute bottom-full left-0 w-full h-8 z-10 cursor-grab active:cursor-grabbing" onPointerDown={(e) => handleNodePointerDown(e, node)} />
+                  
+                  {/* Visible Handle */}
+                  <div 
+                    className="absolute bottom-full left-0 w-full h-6 rounded-t-xl transition-all duration-200 ease-out origin-bottom opacity-0 scale-y-0 group-hover/node:opacity-100 group-hover/node:scale-y-100 pointer-events-none"
+                    style={{ backgroundColor: node.highlightColor }}
+                  >
+                    <div className="w-12 h-1.5 bg-black/20 rounded-full mx-auto mt-2" />
+                  </div>
 
                   <div
-                    className="w-48 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl transition-shadow relative z-10"
+                    className="w-48 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl transition-shadow relative z-20"
                     style={{
                       boxShadow: selectedIds.includes(node.id) ? `0 0 0 2px ${node.highlightColor}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
                     }}
+                    onPointerDown={(e) => handleNodePointerDown(e, node)}
                   >
                     <div
                       className="px-3 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
                       style={{ backgroundColor: node.highlightColor + '1A', borderBottom: `1px solid ${node.highlightColor}40`, borderTopLeftRadius: 12, borderTopRightRadius: 12 }}
                     >
-                      <div className="flex items-center gap-2 flex-1">
+                      <div className="flex items-center gap-2 flex-1 overflow-hidden">
                         <button
                           onPointerDown={e => e.stopPropagation()}
                           onClick={() => {
                             if (selectedIds.includes(node.id)) handleBulkUpdateEnd(selectedIds, { visible: !node.visible });
                             else handleUpdateEnd(node.id, { visible: !node.visible });
                           }}
-                          className="text-white/70 hover:text-white transition-colors"
+                          className="text-white/70 hover:text-white transition-colors shrink-0"
                         >
                           {node.visible ? <Eye size={14 * textScale} /> : <EyeOff size={14 * textScale} />}
                         </button>
-                        <input
-                          value={node.name}
-                          size={Math.max(1, node.name.length)}
-                          onChange={(e) => {
-                            if (selectedIds.includes(node.id)) handleBulkUpdate(selectedIds, { name: e.target.value });
-                            else handleUpdate(node.id, { name: e.target.value });
-                          }}
-                          onBlur={(e) => {
-                            if (selectedIds.includes(node.id)) handleBulkUpdateEnd(selectedIds, { name: e.target.value });
-                            else handleUpdateEnd(node.id, { name: e.target.value });
-                          }}
-                          className="bg-transparent font-bold outline-none text-white/90 focus:text-white cursor-text min-w-[2ch]"
-                          style={{ fontSize: `${14 * textScale}px` }}
-                          onPointerDown={e => e.stopPropagation()}
-                        />
+                        <NodeNameInput name={node.name} onChange={(e: any) => { if (selectedIds.includes(node.id)) handleBulkUpdate(selectedIds, { name: e.target.value }); else handleUpdate(node.id, { name: e.target.value }); }} onCommit={(e: any) => { if (selectedIds.includes(node.id)) handleBulkUpdateEnd(selectedIds, { name: e.target.value }); else handleUpdateEnd(node.id, { name: e.target.value }); }} textScale={textScale} />
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 shrink-0">
                         <div className="relative rounded-full border border-white/20 cursor-pointer" style={{ backgroundColor: node.highlightColor, width: 16 * textScale, height: 16 * textScale }}>
                           <input
                             type="color"
@@ -1400,12 +1480,12 @@ export default function App() {
                     </div>
 
                     <div className="p-3 flex flex-col gap-2 cursor-default" onPointerDown={e => e.stopPropagation()}>
-                      <ScrubbableInput textScale={textScale} label="Width" value={node.width} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { width: v }) : handleUpdate(node.id, { width: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { width: v }) : handleUpdateEnd(node.id, { width: v })} tooltip={TOOLTIPS.width} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
-                      <ScrubbableInput textScale={textScale} label="Height" value={node.height} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { height: v }) : handleUpdate(node.id, { height: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { height: v }) : handleUpdateEnd(node.id, { height: v })} tooltip={TOOLTIPS.height} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
-                      <ScrubbableInput textScale={textScale} label="Left/Right" value={node.x} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { x: v }) : handleUpdate(node.id, { x: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { x: v }) : handleUpdateEnd(node.id, { x: v })} tooltip={TOOLTIPS.leftRight} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
-                      <ScrubbableInput textScale={textScale} label="Up/Down" value={node.y} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { y: v }) : handleUpdate(node.id, { y: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { y: v }) : handleUpdateEnd(node.id, { y: v })} tooltip={TOOLTIPS.upDown} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
-                      <ScrubbableInput textScale={textScale} label="Depth" value={node.depth} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { depth: v }) : handleUpdate(node.id, { depth: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { depth: v }) : handleUpdateEnd(node.id, { depth: v })} tooltip={TOOLTIPS.depth} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
-                      <ScrubbableInput textScale={textScale} label="Corner Roundness" value={node.cornerRadius} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { cornerRadius: v }) : handleUpdate(node.id, { cornerRadius: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { cornerRadius: v }) : handleUpdateEnd(node.id, { cornerRadius: v })} tooltip={TOOLTIPS.cornerRoundness} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <PropertyRow textScale={textScale} label="Width" value={node.width} min={0} onChange={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { width: v }) : handleUpdate(node.id, { width: v })} onCommit={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { width: v }) : handleUpdateEnd(node.id, { width: v })} tooltip={TOOLTIPS.width} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <PropertyRow textScale={textScale} label="Height" value={node.height} min={0} onChange={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { height: v }) : handleUpdate(node.id, { height: v })} onCommit={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { height: v }) : handleUpdateEnd(node.id, { height: v })} tooltip={TOOLTIPS.height} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <PropertyRow textScale={textScale} label="Left/Right" value={node.x} min={-9999} max={9999} onChange={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { x: v }) : handleUpdate(node.id, { x: v })} onCommit={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { x: v }) : handleUpdateEnd(node.id, { x: v })} tooltip={TOOLTIPS.leftRight} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <PropertyRow textScale={textScale} label="Up/Down" value={node.y} min={-9999} max={9999} onChange={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { y: v }) : handleUpdate(node.id, { y: v })} onCommit={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { y: v }) : handleUpdateEnd(node.id, { y: v })} tooltip={TOOLTIPS.upDown} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <PropertyRow textScale={textScale} label="Depth" value={node.depth} min={0} max={999} onChange={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { depth: v }) : handleUpdate(node.id, { depth: v })} onCommit={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { depth: v }) : handleUpdateEnd(node.id, { depth: v })} tooltip={TOOLTIPS.depth} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <PropertyRow textScale={textScale} label="Corner Round" value={node.cornerRadius} min={0} max={Math.min(node.width, node.height) / 2} onChange={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { cornerRadius: v }) : handleUpdate(node.id, { cornerRadius: v })} onCommit={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { cornerRadius: v }) : handleUpdateEnd(node.id, { cornerRadius: v })} tooltip={TOOLTIPS.cornerRoundness} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
                     </div>
                   </div>
                   
