@@ -33,6 +33,13 @@ export const rgbToHex = (r: number, g: number, b: number) => {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 };
 
+export const hexToRgba = (hex: string, alpha: number) => {
+  const r = parseInt(hex.slice(1, 3), 16) || 0;
+  const g = parseInt(hex.slice(3, 5), 16) || 0;
+  const b = parseInt(hex.slice(5, 7), 16) || 0;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 export const getColorHex = (node: ColorNodeData) => {
   if (node.colorMode === 'HSB') return hsbToHex(node.channel1, node.channel2, node.channel3);
   if (node.colorMode === 'HSL') return hslToHex(node.channel1, node.channel2, node.channel3);
@@ -317,7 +324,7 @@ const NodeNameInput = ({ name, onChange, onCommit, textScale }: any) => {
   const isLong = name.length > 12;
   
   return (
-    <div className="overflow-hidden flex-1 relative flex items-center mr-2">
+    <div className="overflow-hidden flex-1 relative flex items-center mr-2 group/input">
       <input
         value={name}
         size={Math.max(1, name.length)}
@@ -325,7 +332,7 @@ const NodeNameInput = ({ name, onChange, onCommit, textScale }: any) => {
         onBlur={(e) => { setIsFocused(false); onCommit(e); }}
         onFocus={() => setIsFocused(true)}
         onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-        className={`bg-transparent font-bold outline-none text-white/90 focus:text-white cursor-text min-w-full transition-transform ${(!isFocused && isLong) ? 'group-hover/node:animate-marquee' : ''}`}
+        className={`bg-transparent font-bold outline-none text-white/90 focus:text-white cursor-text min-w-full transition-transform ${(!isFocused && isLong) ? 'group-hover/input:animate-marquee' : ''}`}
         style={{ fontSize: `${14 * textScale}px` }}
         onPointerDown={e => e.stopPropagation()}
       />
@@ -412,10 +419,17 @@ export default function App() {
   const [tooltip, setTooltip] = useState<{ text: string; visible: boolean }>({ text: '', visible: false });
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, worldX: number, worldY: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [interactingId, setInteractingId] = useState<string | null>(null);
 
   const [uiScale, setUiScale] = useState(1);
   const [textScale, setTextScale] = useState(1);
+  const [handleWidth, setHandleWidth] = useState(192);
+  const [handleHeight, setHandleHeight] = useState(32);
+  const [handleX, setHandleX] = useState(0);
+  const [handleY, setHandleY] = useState(-12);
+  const [rowPaddingX, setRowPaddingX] = useState(12);
+  
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
@@ -582,7 +596,7 @@ export default function App() {
 
   const getNextDefaultName = (type: 'node' | 'group' | 'color') => {
     let i = 1;
-    const prefix = type === 'node' ? 'Node' : type === 'group' ? 'Group' : 'Color';
+    const prefix = type === 'node' ? 'Rectangle' : type === 'group' ? 'Group' : 'Color';
     while (elements.some(e => e.name.toLowerCase() === `${prefix.toLowerCase()} ${i}`)) i++;
     return `${prefix} ${i}`;
   };
@@ -661,6 +675,7 @@ export default function App() {
         type: 'group',
         nodeX: roundedWorldPos.x, nodeY: roundedWorldPos.y, nodeWidth: 0, nodeHeight: 0,
         color: '#3b82f6',
+        opacity: 1,
         expanded: true,
         visible: true,
         depth: maxDepth + 1
@@ -1055,8 +1070,8 @@ export default function App() {
     <div className="flex flex-col h-screen bg-[#0a0a0a] text-zinc-300 font-sans overflow-hidden select-none">
       <style>{`
         @keyframes marquee-scroll {
-          0%, 15% { transform: translateX(0); }
-          85%, 100% { transform: translateX(calc(120px - 100%)); }
+          0%, 10% { transform: translateX(0); }
+          90%, 100% { transform: translateX(calc(130px - 100%)); }
         }
         .animate-marquee {
           animation: marquee-scroll 4s linear infinite alternate;
@@ -1120,6 +1135,10 @@ export default function App() {
               const colorNode = elements.find(e => e.id === node.colorNodeId) as ColorNodeData | undefined;
               const fillColor = colorNode ? getColorHex(colorNode) : node.fill;
               
+              const isHovered = hoveredNodeId === node.id;
+              const isSelected = selectedIds.includes(node.id);
+              const showHighlight = (isSelected || isHovered) && transformingNode?.id !== node.id && interactingId !== node.id;
+
               return (
                 <Rect
                   key={node.id}
@@ -1141,8 +1160,8 @@ export default function App() {
                     }
                   }}
                   strokeScaleEnabled={false}
-                  stroke={selectedIds.includes(node.id) ? node.highlightColor : 'transparent'}
-                  strokeWidth={selectedIds.includes(node.id) && transformingNode?.id !== node.id && interactingId !== node.id ? 1 : 0}
+                  stroke={showHighlight ? node.highlightColor : 'transparent'}
+                  strokeWidth={showHighlight ? 3 : 0}
                   opacity={node.visible ? 1 : 0}
                 />
               );
@@ -1220,6 +1239,7 @@ export default function App() {
                   boundBoxFunc={(oldBox, newBox) => (newBox.width < 5 || newBox.height < 5) ? oldBox : newBox}
                   rotateEnabled={false}
                   keepRatio={false}
+                  shiftBehavior="invertRatio"
                   anchorStroke={color}
                   anchorFill={color}
                   anchorSize={8 / stageScale}
@@ -1244,8 +1264,8 @@ export default function App() {
                 position: 'absolute',
                 left: group.nodeX, top: group.nodeY,
                 width: group.nodeWidth, height: group.nodeHeight,
-                backgroundColor: group.color + '0A',
-                border: `2px dashed ${group.color}66`,
+                backgroundColor: hexToRgba(group.color, (group.opacity ?? 1) * 0.04),
+                border: `2px dashed ${hexToRgba(group.color, (group.opacity ?? 1) * 0.4)}`,
                 borderRadius: 16,
                 pointerEvents: 'auto',
                 zIndex: 10
@@ -1256,11 +1276,23 @@ export default function App() {
               {/* Group Header */}
               <div
                 className="absolute top-0 left-0 right-0 h-10 px-4 flex items-center justify-between cursor-grab active:cursor-grabbing rounded-t-[14px]"
-                style={{ backgroundColor: group.color + '26', borderBottom: `1px solid ${group.color}40` }}
+                style={{ 
+                  backgroundColor: hexToRgba(group.color, (group.opacity ?? 1) * 0.15),
+                  borderBottom: `1px solid ${hexToRgba(group.color, (group.opacity ?? 1) * 0.25)}` 
+                }}
               >
                 <NodeNameInput name={group.name} onChange={(e: any) => { if (selectedIds.includes(group.id)) handleBulkUpdate(selectedIds, { name: e.target.value }); else handleUpdate(group.id, { name: e.target.value }); }} onCommit={(e: any) => { if (selectedIds.includes(group.id)) handleBulkUpdateEnd(selectedIds, { name: e.target.value }); else handleUpdateEnd(group.id, { name: e.target.value }); }} textScale={textScale} />
-                <div className="flex items-center gap-2">
-                  <div className="relative rounded-full border border-white/20 cursor-pointer" style={{ backgroundColor: group.color, width: 16 * textScale, height: 16 * textScale }}>
+                <div className="flex items-center gap-2 group/colordot">
+                  <input 
+                    type="range" min="0" max="1" step="0.01" 
+                    value={group.opacity ?? 1} 
+                    onChange={(e) => { if (selectedIds.includes(group.id)) handleBulkUpdate(selectedIds, { opacity: parseFloat(e.target.value) }); else handleUpdate(group.id, { opacity: parseFloat(e.target.value) }); }}
+                    onBlur={(e) => { if (selectedIds.includes(group.id)) handleBulkUpdateEnd(selectedIds, { opacity: parseFloat(e.target.value) }); else handleUpdateEnd(group.id, { opacity: parseFloat(e.target.value) }); }}
+                    onPointerDown={e => e.stopPropagation()}
+                    className="w-16 hidden group-hover/colordot:block"
+                    style={{ accentColor: group.color }}
+                  />
+                  <div className="relative rounded-full border border-white/20 cursor-pointer shrink-0" style={{ backgroundColor: group.color, width: 16 * textScale, height: 16 * textScale }}>
                     <input
                       type="color"
                       value={group.color}
@@ -1273,7 +1305,7 @@ export default function App() {
                   <button
                     onPointerDown={e => e.stopPropagation()}
                     onClick={() => handleDeleteMultiple(selectedIds.includes(group.id) ? selectedIds : [group.id])}
-                    className="text-white/50 hover:text-red-400 transition-colors"
+                    className="text-white/50 hover:text-red-400 transition-colors shrink-0"
                   >
                     <Trash2 size={14 * textScale} />
                   </button>
@@ -1292,7 +1324,7 @@ export default function App() {
                 position: 'absolute',
                 left: currentDrawingGroup.nodeX, top: currentDrawingGroup.nodeY,
                 width: currentDrawingGroup.nodeWidth, height: currentDrawingGroup.nodeHeight,
-                backgroundColor: currentDrawingGroup.color + '1A',
+                backgroundColor: hexToRgba(currentDrawingGroup.color, 0.1),
                 border: `2px dashed ${currentDrawingGroup.color}`,
                 borderRadius: 16,
                 zIndex: 10
@@ -1310,6 +1342,8 @@ export default function App() {
                 transform: `scale(${uiScale})`,
                 transformOrigin: 'top left'
               }}
+              onMouseEnter={() => setHoveredNodeId(colorNode.id)}
+              onMouseLeave={() => setHoveredNodeId(null)}
             >
               <div className="group/node relative">
                 
@@ -1318,8 +1352,17 @@ export default function App() {
                 
                 {/* Visible Handle */}
                 <div 
-                  className="absolute bottom-full left-0 w-full h-6 rounded-t-xl transition-all duration-200 ease-out origin-bottom opacity-0 scale-y-0 group-hover/node:opacity-100 group-hover/node:scale-y-100 pointer-events-none"
-                  style={{ backgroundColor: colorNode.highlightColor || '#3b82f6' }}
+                  className="absolute transition-all duration-200 ease-out origin-bottom opacity-0 scale-y-0 group-hover/node:opacity-100 group-hover/node:scale-y-100 pointer-events-none"
+                  style={{ 
+                    backgroundColor: colorNode.highlightColor || '#3b82f6', 
+                    width: handleWidth, 
+                    height: handleHeight, 
+                    left: handleX, 
+                    bottom: `calc(100% + ${handleY}px)`,
+                    borderTopLeftRadius: 12,
+                    borderTopRightRadius: 12,
+                    zIndex: -1
+                  }}
                 >
                   <div className="w-12 h-1.5 bg-black/20 rounded-full mx-auto mt-2" />
                 </div>
@@ -1327,7 +1370,7 @@ export default function App() {
                 <div
                   className="w-48 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl transition-shadow relative z-20"
                   style={{
-                    boxShadow: selectedIds.includes(colorNode.id) ? `0 0 0 2px ${colorNode.highlightColor || '#3b82f6'}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
+                    boxShadow: (selectedIds.includes(colorNode.id) || hoveredNodeId === colorNode.id) ? `0 0 0 2px ${colorNode.highlightColor || '#3b82f6'}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
                   }}
                   onPointerDown={(e) => handleNodePointerDown(e, colorNode)}
                 >
@@ -1336,8 +1379,8 @@ export default function App() {
                     style={{ backgroundColor: (colorNode.highlightColor || '#3b82f6') + '1A', borderBottom: `1px solid ${colorNode.highlightColor || '#3b82f6'}40`, borderTopLeftRadius: 12, borderTopRightRadius: 12 }}
                   >
                     <NodeNameInput name={colorNode.name} onChange={(e: any) => { if (selectedIds.includes(colorNode.id)) handleBulkUpdate(selectedIds, { name: e.target.value }); else handleUpdate(colorNode.id, { name: e.target.value }); }} onCommit={(e: any) => { if (selectedIds.includes(colorNode.id)) handleBulkUpdateEnd(selectedIds, { name: e.target.value }); else handleUpdateEnd(colorNode.id, { name: e.target.value }); }} textScale={textScale} />
-                    <div className="flex items-center gap-2">
-                      <div className="relative rounded-full border border-white/20 cursor-pointer shrink-0" style={{ backgroundColor: colorNode.highlightColor || '#3b82f6', width: 16 * textScale, height: 16 * textScale }}>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="relative rounded-full border border-white/20 cursor-pointer" style={{ backgroundColor: colorNode.highlightColor || '#3b82f6', width: 16 * textScale, height: 16 * textScale }}>
                         <input
                           type="color"
                           value={colorNode.highlightColor || '#3b82f6'}
@@ -1350,14 +1393,14 @@ export default function App() {
                       <button
                         onPointerDown={e => e.stopPropagation()}
                         onClick={() => handleDeleteMultiple(selectedIds.includes(colorNode.id) ? selectedIds : [colorNode.id])}
-                        className="text-white/50 hover:text-red-400 transition-colors shrink-0"
+                        className="text-white/50 hover:text-red-400 transition-colors"
                       >
                         <Trash2 size={14 * textScale} />
                       </button>
                     </div>
                   </div>
 
-                  <div className="p-3 flex flex-col gap-3 cursor-default" onPointerDown={e => e.stopPropagation()}>
+                  <div className="flex flex-col gap-3 cursor-default" style={{ padding: `12px ${rowPaddingX}px` }} onPointerDown={e => e.stopPropagation()}>
                     {/* Color Preview */}
                     <ColorPicker2D node={colorNode} onChange={v => handleUpdate(colorNode.id, v)} onCommit={v => handleUpdateEnd(colorNode.id, v)} />
                     
@@ -1414,6 +1457,8 @@ export default function App() {
                   transform: `scale(${uiScale})`,
                   transformOrigin: 'top left'
                 }}
+                onMouseEnter={() => setHoveredNodeId(node.id)}
+                onMouseLeave={() => setHoveredNodeId(null)}
               >
                 <div className="group/node relative">
                   
@@ -1422,8 +1467,17 @@ export default function App() {
                   
                   {/* Visible Handle */}
                   <div 
-                    className="absolute bottom-full left-0 w-full h-6 rounded-t-xl transition-all duration-200 ease-out origin-bottom opacity-0 scale-y-0 group-hover/node:opacity-100 group-hover/node:scale-y-100 pointer-events-none"
-                    style={{ backgroundColor: node.highlightColor }}
+                    className="absolute transition-all duration-200 ease-out origin-bottom opacity-0 scale-y-0 group-hover/node:opacity-100 group-hover/node:scale-y-100 pointer-events-none"
+                    style={{ 
+                      backgroundColor: node.highlightColor, 
+                      width: handleWidth, 
+                      height: handleHeight, 
+                      left: handleX, 
+                      bottom: `calc(100% + ${handleY}px)`,
+                      borderTopLeftRadius: 12,
+                      borderTopRightRadius: 12,
+                      zIndex: -1
+                    }}
                   >
                     <div className="w-12 h-1.5 bg-black/20 rounded-full mx-auto mt-2" />
                   </div>
@@ -1431,7 +1485,7 @@ export default function App() {
                   <div
                     className="w-48 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl transition-shadow relative z-20"
                     style={{
-                      boxShadow: selectedIds.includes(node.id) ? `0 0 0 2px ${node.highlightColor}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
+                      boxShadow: (selectedIds.includes(node.id) || hoveredNodeId === node.id) ? `0 0 0 2px ${node.highlightColor}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
                     }}
                     onPointerDown={(e) => handleNodePointerDown(e, node)}
                   >
@@ -1479,7 +1533,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="p-3 flex flex-col gap-2 cursor-default" onPointerDown={e => e.stopPropagation()}>
+                    <div className="flex flex-col gap-2 cursor-default" style={{ padding: `12px ${rowPaddingX}px` }} onPointerDown={e => e.stopPropagation()}>
                       <PropertyRow textScale={textScale} label="Width" value={node.width} min={0} onChange={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { width: v }) : handleUpdate(node.id, { width: v })} onCommit={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { width: v }) : handleUpdateEnd(node.id, { width: v })} tooltip={TOOLTIPS.width} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
                       <PropertyRow textScale={textScale} label="Height" value={node.height} min={0} onChange={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { height: v }) : handleUpdate(node.id, { height: v })} onCommit={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { height: v }) : handleUpdateEnd(node.id, { height: v })} tooltip={TOOLTIPS.height} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
                       <PropertyRow textScale={textScale} label="Left/Right" value={node.x} min={-9999} max={9999} onChange={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { x: v }) : handleUpdate(node.id, { x: v })} onCommit={(v: number) => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { x: v }) : handleUpdateEnd(node.id, { x: v })} tooltip={TOOLTIPS.leftRight} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
@@ -1579,7 +1633,7 @@ export default function App() {
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-[#1a1a1a] border border-white/10 p-6 rounded-2xl shadow-2xl z-50 w-80"
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-[#1a1a1a] border border-white/10 p-6 rounded-2xl shadow-2xl z-50 w-80 max-h-[60vh] overflow-y-auto"
           >
             <h3 className="text-white font-bold mb-4">Settings</h3>
             <div className="space-y-4">
@@ -1588,35 +1642,62 @@ export default function App() {
                   <span>UI Scale</span>
                   <span>{uiScale.toFixed(1)}x</span>
                 </div>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="2"
-                  step="0.1"
-                  value={uiScale}
-                  onChange={e => setUiScale(parseFloat(e.target.value))}
-                  className="w-full accent-blue-500"
-                />
+                <input type="range" min="0.5" max="2" step="0.1" value={uiScale} onChange={e => setUiScale(parseFloat(e.target.value))} className="w-full accent-blue-500" />
               </div>
               <div>
                 <div className="flex justify-between text-xs text-zinc-400 mb-2">
                   <span>Text Scale</span>
                   <span>{textScale.toFixed(1)}x</span>
                 </div>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="2"
-                  step="0.1"
-                  value={textScale}
-                  onChange={e => setTextScale(parseFloat(e.target.value))}
-                  className="w-full accent-blue-500"
-                />
+                <input type="range" min="0.5" max="2" step="0.1" value={textScale} onChange={e => setTextScale(parseFloat(e.target.value))} className="w-full accent-blue-500" />
+              </div>
+              <div>
+                <div className="flex justify-between text-xs text-zinc-400 mb-2">
+                  <span>Handle Width</span>
+                  <span>{handleWidth}px</span>
+                </div>
+                <input type="range" min="50" max="300" value={handleWidth} onChange={e => setHandleWidth(parseInt(e.target.value))} className="w-full accent-blue-500" />
+              </div>
+              <div>
+                <div className="flex justify-between text-xs text-zinc-400 mb-2">
+                  <span>Handle Height</span>
+                  <span>{handleHeight}px</span>
+                </div>
+                <input type="range" min="10" max="100" value={handleHeight} onChange={e => setHandleHeight(parseInt(e.target.value))} className="w-full accent-blue-500" />
+              </div>
+              <div>
+                <div className="flex justify-between text-xs text-zinc-400 mb-2">
+                  <span>Handle X Offset</span>
+                  <span>{handleX}px</span>
+                </div>
+                <input type="range" min="-100" max="100" value={handleX} onChange={e => setHandleX(parseInt(e.target.value))} className="w-full accent-blue-500" />
+              </div>
+              <div>
+                <div className="flex justify-between text-xs text-zinc-400 mb-2">
+                  <span>Handle Y Offset</span>
+                  <span>{handleY}px</span>
+                </div>
+                <input type="range" min="-50" max="50" value={handleY} onChange={e => setHandleY(parseInt(e.target.value))} className="w-full accent-blue-500" />
+              </div>
+              <div>
+                <div className="flex justify-between text-xs text-zinc-400 mb-2">
+                  <span>Row Padding X</span>
+                  <span>{rowPaddingX}px</span>
+                </div>
+                <input type="range" min="0" max="40" value={rowPaddingX} onChange={e => setRowPaddingX(parseInt(e.target.value))} className="w-full accent-blue-500" />
               </div>
             </div>
             <button
+              onClick={() => {
+                navigator.clipboard.writeText(JSON.stringify({ handleWidth, handleHeight, handleX, handleY, rowPaddingX }, null, 2));
+              }}
+              className="mt-4 w-full py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg text-sm font-medium transition-colors"
+            >
+              Copy Settings to Clipboard
+            </button>
+            <button
               onClick={() => setIsSettingsOpen(false)}
-              className="mt-6 w-full py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors"
+              className="mt-2 w-full py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors"
             >
               Done
             </button>

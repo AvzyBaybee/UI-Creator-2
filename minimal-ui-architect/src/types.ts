@@ -31,6 +31,7 @@ export interface GroupData extends BaseElement {
   nodeWidth: number;
   nodeHeight: number;
   color: string;
+  opacity?: number;
 }
 
 export interface ColorNodeData extends BaseElement {
