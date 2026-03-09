@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Stage, Layer, Rect, Transformer, Text, Group, Line } from 'react-konva';
+import { Stage, Layer, Rect, Transformer, Text, Group } from 'react-konva';
 import { Rectangle, Tool, CanvasElement, GroupData } from './types';
-import { Trash2, MousePointer2, Square, Eye, EyeOff, FolderPlus, Hand, ZoomIn } from 'lucide-react';
+import { Trash2, MousePointer2, Square, Eye, EyeOff, FolderPlus, Hand, ZoomIn, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const INITIAL_ELEMENTS: CanvasElement[] = [];
@@ -52,10 +52,11 @@ interface ScrubbableInputProps {
   hideTooltip: () => void;
   onHoverStart?: () => void;
   onHoverEnd?: () => void;
+  textScale: number;
 }
 
 const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
-  value, onChange, onCommit, label, tooltip, showTooltip, hideTooltip, onHoverStart, onHoverEnd
+  value, onChange, onCommit, label, tooltip, showTooltip, hideTooltip, onHoverStart, onHoverEnd, textScale
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState(value.toString());
@@ -140,7 +141,8 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
   return (
     <div className="flex items-center justify-between group/scrub" onMouseDown={e => e.stopPropagation()}>
       <label
-        className="text-[11px] text-zinc-400 flex items-center gap-1 cursor-help select-none"
+        className="text-zinc-400 flex items-center gap-1 cursor-help select-none"
+        style={{ fontSize: `${11 * textScale}px` }}
         onMouseEnter={() => { showTooltip(tooltip); onHoverStart?.(); }}
         onMouseLeave={() => { hideTooltip(); onHoverEnd?.(); }}
       >
@@ -154,7 +156,8 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
           onChange={(e) => setInputValue(e.target.value)}
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
-          className="bg-blue-500/20 border border-blue-500/50 rounded px-2 py-1 text-[11px] w-16 text-right outline-none text-white"
+          style={{ fontSize: `${11 * textScale}px` }}
+          className="bg-blue-500/20 border border-blue-500/50 rounded px-2 py-1 w-16 text-right outline-none text-white"
         />
       ) : (
         <div
@@ -162,7 +165,8 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
           onMouseDown={handleMouseDown}
           onMouseEnter={onHoverStart}
           onMouseLeave={onHoverEnd}
-          className="bg-black/40 border border-white/5 rounded px-2 py-1 text-[11px] w-16 text-right cursor-ew-resize select-none text-zinc-300 hover:text-white hover:bg-white/5 transition-colors"
+          style={{ fontSize: `${11 * textScale}px` }}
+          className="bg-black/40 border border-white/5 rounded px-2 py-1 w-16 text-right cursor-ew-resize select-none text-zinc-300 hover:text-white hover:bg-white/5 transition-colors"
         >
           {Math.round(value)}
         </div>
@@ -182,11 +186,15 @@ export default function App() {
   const [prevTool, setPrevTool] = useState<Tool>('select');
   const [tooltip, setTooltip] = useState<{ text: string; visible: boolean }>({ text: '', visible: false });
 
+  const [uiScale, setUiScale] = useState(1);
+  const [textScale, setTextScale] = useState(1);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [stageScale, setStageScale] = useState(1);
 
   const [isDrawing, setIsDrawing] = useState(false);
-  const [isDrawingZone, setIsDrawingZone] = useState(false);
+  const [isDrawingGroup, setIsDrawingGroup] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
   const [isZooming, setIsZooming] = useState(false);
 
@@ -194,7 +202,7 @@ export default function App() {
   const [selectionRect, setSelectionRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [newRectStart, setNewRectStart] = useState<{ x: number; y: number } | null>(null);
   const [currentDrawingRect, setCurrentDrawingRect] = useState<Rectangle | null>(null);
-  const [currentDrawingZone, setCurrentDrawingZone] = useState<GroupData | null>(null);
+  const [currentDrawingGroup, setCurrentDrawingGroup] = useState<GroupData | null>(null);
   const [transformingRect, setTransformingRect] = useState<Rectangle | null>(null);
   const zoomStartRef = useRef<{ clientX: number, scale: number, mousePointTo: { x: number, y: number } } | null>(null);
 
@@ -258,7 +266,7 @@ export default function App() {
       }
       if (e.key.toLowerCase() === 'v') setTool('select');
       if (e.key.toLowerCase() === 'r') setTool('rectangle');
-      if (e.key.toLowerCase() === 'g') setTool('zone');
+      if (e.key.toLowerCase() === 'g') setTool('group');
       if (e.key.toLowerCase() === 'h') setTool('hand');
     };
 
@@ -292,7 +300,7 @@ export default function App() {
 
   const getNextDefaultName = (type: 'rectangle' | 'group') => {
     let i = 1;
-    const prefix = type === 'rectangle' ? 'Rectangle' : 'Zone';
+    const prefix = type === 'rectangle' ? 'Rectangle' : 'Group';
     while (elements.some(e => e.name.toLowerCase() === `${prefix.toLowerCase()} ${i}`)) i++;
     return `${prefix} ${i}`;
   };
@@ -350,11 +358,11 @@ export default function App() {
         cornerRadius: 0,
         highlightColor: '#3b82f6'
       });
-    } else if (tool === 'zone') {
-      setIsDrawingZone(true);
+    } else if (tool === 'group') {
+      setIsDrawingGroup(true);
       setNewRectStart(worldPos);
       const maxDepth = elements.length > 0 ? Math.max(...elements.map(el => el.depth)) : 0;
-      setCurrentDrawingZone({
+      setCurrentDrawingGroup({
         id: `group-temp`,
         name: '',
         type: 'group',
@@ -396,9 +404,9 @@ export default function App() {
         width: Math.abs(worldPos.x - newRectStart.x),
         height: Math.abs(worldPos.y - newRectStart.y),
       });
-    } else if (isDrawingZone && newRectStart && currentDrawingZone) {
-      setCurrentDrawingZone({
-        ...currentDrawingZone,
+    } else if (isDrawingGroup && newRectStart && currentDrawingGroup) {
+      setCurrentDrawingGroup({
+        ...currentDrawingGroup,
         nodeX: Math.min(newRectStart.x, worldPos.x),
         nodeY: Math.min(newRectStart.y, worldPos.y),
         nodeWidth: Math.abs(worldPos.x - newRectStart.x),
@@ -434,20 +442,20 @@ export default function App() {
       setIsDrawing(false);
       setNewRectStart(null);
       setCurrentDrawingRect(null);
-    } else if (isDrawingZone && currentDrawingZone) {
-      if (currentDrawingZone.nodeWidth > 5 && currentDrawingZone.nodeHeight > 5) {
-        const finalZone: GroupData = {
-          ...currentDrawingZone,
+    } else if (isDrawingGroup && currentDrawingGroup) {
+      if (currentDrawingGroup.nodeWidth > 5 && currentDrawingGroup.nodeHeight > 5) {
+        const finalGroup: GroupData = {
+          ...currentDrawingGroup,
           id: `group-${Date.now()}`,
           name: getNextDefaultName('group'),
           color: generateDistinctColor(),
         };
-        pushToHistory([...elements, finalZone]);
-        setSelectedIds([finalZone.id]);
+        pushToHistory([...elements, finalGroup]);
+        setSelectedIds([finalGroup.id]);
       }
-      setIsDrawingZone(false);
+      setIsDrawingGroup(false);
       setNewRectStart(null);
-      setCurrentDrawingZone(null);
+      setCurrentDrawingGroup(null);
     } else if (isSelecting && selectionRect) {
       const selected = elements.filter(el => {
         if (el.type !== 'rectangle') return false;
@@ -489,28 +497,28 @@ export default function App() {
     }
   };
 
-  const checkZoneIntersection = useCallback((nodeId: string) => {
+  const checkGroupIntersection = useCallback((nodeId: string) => {
     const currentElements = elementsRef.current;
     const node = currentElements.find(e => e.id === nodeId);
     if (!node) return;
 
-    const nodeCenterX = node.nodeX + 120;
+    const nodeCenterX = node.nodeX + 96; // approx half of w-48
     const nodeCenterY = node.nodeY + 20;
 
-    const zones = currentElements.filter(e => e.type === 'group') as GroupData[];
-    zones.sort((a, b) => b.depth - a.depth);
+    const groups = currentElements.filter(e => e.type === 'group') as GroupData[];
+    groups.sort((a, b) => b.depth - a.depth);
 
-    let foundZoneId: string | undefined = undefined;
-    for (const zone of zones) {
-      if (nodeCenterX >= zone.nodeX && nodeCenterX <= zone.nodeX + zone.nodeWidth &&
-        nodeCenterY >= zone.nodeY && nodeCenterY <= zone.nodeY + zone.nodeHeight) {
-        foundZoneId = zone.id;
+    let foundGroupId: string | undefined = undefined;
+    for (const group of groups) {
+      if (nodeCenterX >= group.nodeX && nodeCenterX <= group.nodeX + group.nodeWidth &&
+        nodeCenterY >= group.nodeY && nodeCenterY <= group.nodeY + group.nodeHeight) {
+        foundGroupId = group.id;
         break;
       }
     }
 
-    if (node.parentId !== foundZoneId) {
-      const newElements = currentElements.map(e => e.id === nodeId ? { ...e, parentId: foundZoneId } : e);
+    if (node.parentId !== foundGroupId) {
+      const newElements = currentElements.map(e => e.id === nodeId ? { ...e, parentId: foundGroupId } : e);
       pushToHistory(newElements);
     } else {
       pushToHistory(currentElements);
@@ -551,7 +559,7 @@ export default function App() {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       if (el.type !== 'group') {
-        checkZoneIntersection(el.id);
+        checkGroupIntersection(el.id);
       } else {
         pushToHistory(elementsRef.current);
       }
@@ -561,14 +569,14 @@ export default function App() {
     window.addEventListener('pointerup', onPointerUp);
   };
 
-  const handleZoneResizePointerDown = (e: React.PointerEvent, zone: GroupData, corner: string) => {
+  const handleGroupResizePointerDown = (e: React.PointerEvent, group: GroupData, corner: string) => {
     e.stopPropagation();
     const startX = e.clientX;
     const startY = e.clientY;
-    const startW = zone.nodeWidth;
-    const startH = zone.nodeHeight;
-    const startNodeX = zone.nodeX;
-    const startNodeY = zone.nodeY;
+    const startW = group.nodeWidth;
+    const startH = group.nodeHeight;
+    const startNodeX = group.nodeX;
+    const startNodeY = group.nodeY;
 
     const onPointerMove = (moveEvt: PointerEvent) => {
       const dx = (moveEvt.clientX - startX) / stageScale;
@@ -589,7 +597,7 @@ export default function App() {
         if (newH > 50) newY = startNodeY + dy;
       }
 
-      setElements(prev => prev.map(p => p.id === zone.id ? { ...p, nodeWidth: newW, nodeHeight: newH, nodeX: newX, nodeY: newY } : p));
+      setElements(prev => prev.map(p => p.id === group.id ? { ...p, nodeWidth: newW, nodeHeight: newH, nodeX: newX, nodeY: newY } : p));
     };
 
     const onPointerUp = () => {
@@ -711,7 +719,7 @@ export default function App() {
   };
 
   const sortedRects = useMemo(() => elements.filter(e => e.type === 'rectangle').sort((a, b) => a.depth - b.depth), [elements]);
-  const zones = useMemo(() => elements.filter(e => e.type === 'group') as GroupData[], [elements]);
+  const groups = useMemo(() => elements.filter(e => e.type === 'group') as GroupData[], [elements]);
   const nodes = useMemo(() => elements.filter(e => e.type === 'rectangle') as Rectangle[], [elements]);
 
   return (
@@ -745,18 +753,6 @@ export default function App() {
           className="absolute inset-0 z-0"
         >
           <Layer>
-            {/* Wires from Nodes to Rectangles */}
-            {nodes.map(rect => (
-              <Line
-                key={`wire-${rect.id}`}
-                points={[rect.nodeX, rect.nodeY + 20, rect.x + rect.width / 2, rect.y + rect.height / 2]}
-                stroke={rect.highlightColor}
-                strokeWidth={2 / stageScale}
-                dash={[5 / stageScale, 5 / stageScale]}
-                opacity={0.25}
-              />
-            ))}
-
             {sortedRects.map((el) => {
               const rect = el as Rectangle;
               return (
@@ -837,58 +833,60 @@ export default function App() {
           className="absolute inset-0 pointer-events-none"
           style={{ transform: `translate(${stagePos.x}px, ${stagePos.y}px) scale(${stageScale})`, transformOrigin: '0 0' }}
         >
-          {/* Zones (Drawn behind Nodes) */}
-          {zones.map(zone => (
+          {/* Groups (Drawn behind Nodes) */}
+          {groups.map(group => (
             <div
-              key={zone.id}
+              key={group.id}
               style={{
                 position: 'absolute',
-                left: zone.nodeX, top: zone.nodeY,
-                width: zone.nodeWidth, height: zone.nodeHeight,
-                backgroundColor: zone.color + '0A',
-                border: `2px dashed ${zone.color}66`,
+                left: group.nodeX, top: group.nodeY,
+                width: group.nodeWidth, height: group.nodeHeight,
+                backgroundColor: group.color + '0A',
+                border: `2px dashed ${group.color}66`,
                 borderRadius: 16,
                 pointerEvents: 'auto',
                 zIndex: 10
               }}
-              className={`group ${selectedIds.includes(zone.id) ? 'ring-2 ring-white/50' : ''}`}
-              onPointerDown={(e) => handleNodePointerDown(e, zone)}
+              className={`group ${selectedIds.includes(group.id) ? 'ring-2 ring-white/50' : ''}`}
+              onPointerDown={(e) => handleNodePointerDown(e, group)}
             >
-              {/* Zone Header */}
+              {/* Group Header */}
               <div
                 className="absolute top-0 left-0 right-0 h-10 px-4 flex items-center justify-between cursor-grab active:cursor-grabbing rounded-t-[14px]"
-                style={{ backgroundColor: zone.color + '26', borderBottom: `1px solid ${zone.color}40` }}
+                style={{ backgroundColor: group.color + '26', borderBottom: `1px solid ${group.color}40` }}
               >
                 <input
-                  value={zone.name}
-                  onChange={(e) => handleUpdate(zone.id, { name: e.target.value })}
-                  onBlur={(e) => handleUpdateEnd(zone.id, { name: e.target.value })}
-                  className="bg-transparent font-bold text-sm outline-none text-white/90 w-full focus:text-white cursor-text"
+                  value={group.name}
+                  size={Math.max(1, group.name.length)}
+                  onChange={(e) => handleUpdate(group.id, { name: e.target.value })}
+                  onBlur={(e) => handleUpdateEnd(group.id, { name: e.target.value })}
+                  className="bg-transparent font-bold outline-none text-white/90 focus:text-white cursor-text min-w-[2ch]"
+                  style={{ fontSize: `${14 * textScale}px` }}
                   onPointerDown={e => e.stopPropagation()}
                 />
                 <button
                   onPointerDown={e => e.stopPropagation()}
-                  onClick={() => handleDeleteMultiple([zone.id])}
+                  onClick={() => handleDeleteMultiple([group.id])}
                   className="text-white/50 hover:text-red-400 transition-colors"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={14 * textScale} />
                 </button>
               </div>
               {/* Resize Handles */}
-              <div className="absolute -right-2 top-0 bottom-0 w-4 cursor-ew-resize" onPointerDown={e => handleZoneResizePointerDown(e, zone, 'e')} />
-              <div className="absolute -bottom-2 left-0 right-0 h-4 cursor-ns-resize" onPointerDown={e => handleZoneResizePointerDown(e, zone, 's')} />
-              <div className="absolute -right-2 -bottom-2 w-4 h-4 cursor-nwse-resize" onPointerDown={e => handleZoneResizePointerDown(e, zone, 'se')} />
+              <div className="absolute -right-2 top-0 bottom-0 w-4 cursor-ew-resize" onPointerDown={e => handleGroupResizePointerDown(e, group, 'e')} />
+              <div className="absolute -bottom-2 left-0 right-0 h-4 cursor-ns-resize" onPointerDown={e => handleGroupResizePointerDown(e, group, 's')} />
+              <div className="absolute -right-2 -bottom-2 w-4 h-4 cursor-nwse-resize" onPointerDown={e => handleGroupResizePointerDown(e, group, 'se')} />
             </div>
           ))}
 
-          {currentDrawingZone && (
+          {currentDrawingGroup && (
             <div
               style={{
                 position: 'absolute',
-                left: currentDrawingZone.nodeX, top: currentDrawingZone.nodeY,
-                width: currentDrawingZone.nodeWidth, height: currentDrawingZone.nodeHeight,
-                backgroundColor: currentDrawingZone.color + '1A',
-                border: `2px dashed ${currentDrawingZone.color}`,
+                left: currentDrawingGroup.nodeX, top: currentDrawingGroup.nodeY,
+                width: currentDrawingGroup.nodeWidth, height: currentDrawingGroup.nodeHeight,
+                backgroundColor: currentDrawingGroup.color + '1A',
+                border: `2px dashed ${currentDrawingGroup.color}`,
                 borderRadius: 16,
                 zIndex: 10
               }}
@@ -899,64 +897,77 @@ export default function App() {
           {nodes.map(node => (
             <div
               key={node.id}
-              className={`absolute w-60 bg-[#1a1a1a]/95 backdrop-blur-md border rounded-xl overflow-hidden pointer-events-auto transition-shadow ${selectedIds.includes(node.id) ? 'z-50' : 'z-20 border-white/10'}`}
+              className={`absolute pointer-events-auto ${selectedIds.includes(node.id) ? 'z-50' : 'z-20'}`}
               style={{
                 left: node.nodeX, top: node.nodeY,
-                boxShadow: selectedIds.includes(node.id) ? `0 0 0 2px ${node.highlightColor}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
+                transform: `scale(${uiScale})`,
+                transformOrigin: 'top left'
               }}
               onPointerDown={(e) => handleNodePointerDown(e, node)}
             >
-              <div
-                className="px-3 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
-                style={{ backgroundColor: node.highlightColor + '33', borderBottom: `1px solid ${node.highlightColor}40` }}
-              >
-                <div className="flex items-center gap-2 flex-1">
-                  <button
-                    onPointerDown={e => e.stopPropagation()}
-                    onClick={() => handleUpdateEnd(node.id, { visible: !node.visible })}
-                    className="text-white/70 hover:text-white transition-colors"
-                  >
-                    {node.visible ? <Eye size={14} /> : <EyeOff size={14} />}
-                  </button>
-                  <input
-                    value={node.name}
-                    onChange={(e) => handleUpdate(node.id, { name: e.target.value })}
-                    onBlur={(e) => handleUpdateEnd(node.id, { name: e.target.value })}
-                    className="bg-transparent font-bold text-sm outline-none text-white/90 w-full focus:text-white cursor-text"
-                    onPointerDown={e => e.stopPropagation()}
+              <div className="group transition-transform duration-200 hover:-translate-y-4">
+                <div
+                  className="w-48 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl overflow-hidden shadow-2xl transition-shadow"
+                  style={{
+                    boxShadow: selectedIds.includes(node.id) ? `0 0 0 2px ${node.highlightColor}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
+                  }}
+                >
+                  {/* Expanding Hover Handle */}
+                  <div
+                    className="h-0 group-hover:h-4 transition-all duration-200 cursor-grab w-full"
+                    style={{ backgroundColor: node.highlightColor + '33' }}
                   />
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="relative w-4 h-4 rounded-full border border-white/20 cursor-pointer" style={{ backgroundColor: node.highlightColor }}>
-                    <input
-                      type="color"
-                      value={node.highlightColor}
-                      onChange={(e) => handleUpdate(node.id, { highlightColor: e.target.value })}
-                      onBlur={(e) => handleUpdateEnd(node.id, { highlightColor: e.target.value })}
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                      onPointerDown={e => e.stopPropagation()}
-                    />
-                  </div>
-                  <button
-                    onPointerDown={e => e.stopPropagation()}
-                    onClick={() => handleDeleteMultiple([node.id])}
-                    className="text-white/50 hover:text-red-400 transition-colors"
+                  <div
+                    className="px-3 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
+                    style={{ backgroundColor: node.highlightColor + '33', borderBottom: `1px solid ${node.highlightColor}40` }}
                   >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
+                    <div className="flex items-center gap-2 flex-1">
+                      <button
+                        onPointerDown={e => e.stopPropagation()}
+                        onClick={() => handleUpdateEnd(node.id, { visible: !node.visible })}
+                        className="text-white/70 hover:text-white transition-colors"
+                      >
+                        {node.visible ? <Eye size={14 * textScale} /> : <EyeOff size={14 * textScale} />}
+                      </button>
+                      <input
+                        value={node.name}
+                        size={Math.max(1, node.name.length)}
+                        onChange={(e) => handleUpdate(node.id, { name: e.target.value })}
+                        onBlur={(e) => handleUpdateEnd(node.id, { name: e.target.value })}
+                        className="bg-transparent font-bold outline-none text-white/90 focus:text-white cursor-text min-w-[2ch]"
+                        style={{ fontSize: `${14 * textScale}px` }}
+                        onPointerDown={e => e.stopPropagation()}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="relative rounded-full border border-white/20 cursor-pointer" style={{ backgroundColor: node.highlightColor, width: 16 * textScale, height: 16 * textScale }}>
+                        <input
+                          type="color"
+                          value={node.highlightColor}
+                          onChange={(e) => handleUpdate(node.id, { highlightColor: e.target.value })}
+                          onBlur={(e) => handleUpdateEnd(node.id, { highlightColor: e.target.value })}
+                          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                          onPointerDown={e => e.stopPropagation()}
+                        />
+                      </div>
+                      <button
+                        onPointerDown={e => e.stopPropagation()}
+                        onClick={() => handleDeleteMultiple([node.id])}
+                        className="text-white/50 hover:text-red-400 transition-colors"
+                      >
+                        <Trash2 size={14 * textScale} />
+                      </button>
+                    </div>
+                  </div>
 
-              <div className="p-3 space-y-3 cursor-default" onPointerDown={e => e.stopPropagation()}>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                  <ScrubbableInput label="Width" value={node.width} onChange={v => handleUpdate(node.id, { width: v })} onCommit={v => handleUpdateEnd(node.id, { width: v })} tooltip="Width of rectangle" showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                  <ScrubbableInput label="Height" value={node.height} onChange={v => handleUpdate(node.id, { height: v })} onCommit={v => handleUpdateEnd(node.id, { height: v })} tooltip="Height of rectangle" showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                  <ScrubbableInput label="X Pos" value={node.x} onChange={v => handleUpdate(node.id, { x: v })} onCommit={v => handleUpdateEnd(node.id, { x: v })} tooltip="Horizontal position" showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                  <ScrubbableInput label="Y Pos" value={node.y} onChange={v => handleUpdate(node.id, { y: v })} onCommit={v => handleUpdateEnd(node.id, { y: v })} tooltip="Vertical position" showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                </div>
-                <div className="space-y-2 pt-2 border-t border-white/5">
-                  <ScrubbableInput label="Depth" value={node.depth} onChange={v => handleUpdate(node.id, { depth: v })} onCommit={v => handleUpdateEnd(node.id, { depth: v })} tooltip="Layer rendering order" showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                  <ScrubbableInput label="Radius" value={node.cornerRadius} onChange={v => handleUpdate(node.id, { cornerRadius: v })} onCommit={v => handleUpdateEnd(node.id, { cornerRadius: v })} tooltip="Corner roundness" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                  <div className="p-3 flex flex-col gap-2 cursor-default" onPointerDown={e => e.stopPropagation()}>
+                    <ScrubbableInput textScale={textScale} label="Width" value={node.width} onChange={v => handleUpdate(node.id, { width: v })} onCommit={v => handleUpdateEnd(node.id, { width: v })} tooltip="Width of rectangle" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                    <ScrubbableInput textScale={textScale} label="Height" value={node.height} onChange={v => handleUpdate(node.id, { height: v })} onCommit={v => handleUpdateEnd(node.id, { height: v })} tooltip="Height of rectangle" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                    <ScrubbableInput textScale={textScale} label="X Pos" value={node.x} onChange={v => handleUpdate(node.id, { x: v })} onCommit={v => handleUpdateEnd(node.id, { x: v })} tooltip="Horizontal position" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                    <ScrubbableInput textScale={textScale} label="Y Pos" value={node.y} onChange={v => handleUpdate(node.id, { y: v })} onCommit={v => handleUpdateEnd(node.id, { y: v })} tooltip="Vertical position" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                    <ScrubbableInput textScale={textScale} label="Depth" value={node.depth} onChange={v => handleUpdate(node.id, { depth: v })} onCommit={v => handleUpdateEnd(node.id, { depth: v })} tooltip="Layer rendering order" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                    <ScrubbableInput textScale={textScale} label="Radius" value={node.cornerRadius} onChange={v => handleUpdate(node.id, { cornerRadius: v })} onCommit={v => handleUpdateEnd(node.id, { cornerRadius: v })} tooltip="Corner roundness" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -965,17 +976,74 @@ export default function App() {
       </div>
 
       {/* Floating Toolbar */}
-      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-[#1a1a1a]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex items-center p-2 gap-1 z-50">
+      <div
+        className="fixed bottom-8 left-1/2 bg-[#1a1a1a]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex items-center p-2 gap-1 z-50"
+        style={{ transform: `translateX(-50%) scale(${uiScale})`, transformOrigin: 'bottom center' }}
+      >
         <ToolButton icon={<MousePointer2 size={18} />} label="Select (V)" active={tool === 'select'} onClick={() => setTool('select')} />
         <ToolButton icon={<Hand size={18} />} label="Pan (H / Space)" active={tool === 'hand'} onClick={() => setTool('hand')} />
         <ToolButton icon={<ZoomIn size={18} />} label="Zoom (Z)" active={tool === 'zoom'} onClick={() => setTool('zoom')} />
         <div className="w-px h-6 bg-white/10 mx-2" />
         <ToolButton icon={<Square size={18} />} label="Rectangle (R)" active={tool === 'rectangle'} onClick={() => setTool('rectangle')} />
-        <ToolButton icon={<FolderPlus size={18} />} label="Zone (G)" active={tool === 'zone'} onClick={() => setTool('zone')} />
+        <ToolButton icon={<FolderPlus size={18} />} label="Group (G)" active={tool === 'group'} onClick={() => setTool('group')} />
+        <div className="w-px h-6 bg-white/10 mx-2" />
+        <ToolButton icon={<Settings size={18} />} label="Settings" active={isSettingsOpen} onClick={() => setIsSettingsOpen(!isSettingsOpen)} />
 
         {/* Hidden Export Button for future functionality */}
         <button className="hidden" onClick={handleExport}>Export JSON</button>
       </div>
+
+      {/* Settings Panel */}
+      <AnimatePresence>
+        {isSettingsOpen && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-[#1a1a1a] border border-white/10 p-6 rounded-2xl shadow-2xl z-50 w-80"
+          >
+            <h3 className="text-white font-bold mb-4">Settings</h3>
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between text-xs text-zinc-400 mb-2">
+                  <span>UI Scale</span>
+                  <span>{uiScale.toFixed(1)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.1"
+                  value={uiScale}
+                  onChange={e => setUiScale(parseFloat(e.target.value))}
+                  className="w-full accent-blue-500"
+                />
+              </div>
+              <div>
+                <div className="flex justify-between text-xs text-zinc-400 mb-2">
+                  <span>Text Scale</span>
+                  <span>{textScale.toFixed(1)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.1"
+                  value={textScale}
+                  onChange={e => setTextScale(parseFloat(e.target.value))}
+                  className="w-full accent-blue-500"
+                />
+              </div>
+            </div>
+            <button
+              onClick={() => setIsSettingsOpen(false)}
+              className="mt-6 w-full py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              Done
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

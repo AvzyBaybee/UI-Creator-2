@@ -34,4 +34,4 @@ export interface GroupData extends BaseElement {
 
 export type CanvasElement = Rectangle | GroupData;
 
-export type Tool = 'select' | 'rectangle' | 'zone' | 'hand' | 'zoom';
+export type Tool = 'select' | 'rectangle' | 'group' | 'hand' | 'zoom';
