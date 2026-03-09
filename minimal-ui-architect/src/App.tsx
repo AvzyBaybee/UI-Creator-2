@@ -190,7 +190,7 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           style={{ fontSize: `${11 * textScale}px` }}
-          className="bg-blue-500/20 border border-blue-500/50 rounded px-2 py-1 w-16 text-right outline-none text-white"
+          className="w-12 text-right bg-transparent text-white outline-none border-b border-blue-500"
         />
       ) : (
         <div
@@ -199,11 +199,110 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
           onMouseEnter={onHoverStart}
           onMouseLeave={onHoverEnd}
           style={{ fontSize: `${11 * textScale}px` }}
-          className="bg-black/40 border border-white/5 rounded px-2 py-1 w-16 text-right cursor-ew-resize select-none text-zinc-300 hover:text-white hover:bg-white/5 transition-colors"
+          className="w-12 text-right cursor-ew-resize select-none text-zinc-300 hover:text-white transition-colors bg-transparent border-none outline-none"
         >
           {Math.round(value)}
         </div>
       )}
+    </div>
+  );
+};
+
+// --- Custom Slider Component ---
+const CustomSlider = ({ value, min, max, onChange, onCommit }: { value: number, min: number, max: number, onChange: (v: number) => void, onCommit: (v: number) => void }) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.shiftKey) {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        const newVal = Math.min(max, value + 10);
+        onChange(newVal);
+        onCommit(newVal);
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const newVal = Math.max(min, value - 10);
+        onChange(newVal);
+        onCommit(newVal);
+      }
+    }
+  };
+
+  return (
+    <input 
+      type="range" min={min} max={max} 
+      value={value}
+      onChange={e => onChange(parseInt(e.target.value))}
+      onMouseUp={e => onCommit(parseInt((e.target as HTMLInputElement).value))}
+      onKeyDown={handleKeyDown}
+      className="flex-1 accent-blue-500"
+    />
+  );
+};
+
+// --- 2D Color Picker Area ---
+const ColorPicker2D = ({ node, onChange, onCommit }: { node: ColorNodeData, onChange: (updates: Partial<ColorNodeData>) => void, onCommit: (updates: Partial<ColorNodeData>) => void }) => {
+  const areaRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+
+  const max2 = node.colorMode === 'RGB' ? 255 : 100;
+  const max3 = node.colorMode === 'RGB' ? 255 : 100;
+
+  const handleMove = (e: MouseEvent | React.PointerEvent) => {
+    if (!areaRef.current) return;
+    const rect = areaRef.current.getBoundingClientRect();
+    let x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    let y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+    const val2 = Math.round(x * max2);
+    const val3 = Math.round((1 - y) * max3);
+
+    onChange({ channel2: val2, channel3: val3 });
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    isDragging.current = true;
+    handleMove(e);
+
+    const onPointerMove = (me: MouseEvent) => {
+      if (isDragging.current) handleMove(me);
+    };
+
+    const onPointerUp = (me: MouseEvent) => {
+      isDragging.current = false;
+      if (areaRef.current) {
+        const rect = areaRef.current.getBoundingClientRect();
+        let x = Math.max(0, Math.min(1, (me.clientX - rect.left) / rect.width));
+        let y = Math.max(0, Math.min(1, (me.clientY - rect.top) / rect.height));
+        onCommit({ channel2: Math.round(x * max2), channel3: Math.round((1 - y) * max3) });
+      }
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  };
+
+  const getBg = () => {
+    if (node.colorMode === 'HSB' || node.colorMode === 'HSL') return `hsl(${node.channel1}, 100%, 50%)`;
+    return `rgb(${node.channel1}, 0, 0)`; 
+  };
+
+  const getOverlays = () => {
+    if (node.colorMode === 'HSB') return `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent)`;
+    if (node.colorMode === 'HSL') return `linear-gradient(to top, #000, transparent), linear-gradient(to right, #808080, transparent)`;
+    return `linear-gradient(to top, #00f, transparent), linear-gradient(to right, #0f0, transparent)`;
+  };
+
+  return (
+    <div 
+      ref={areaRef}
+      onPointerDown={handlePointerDown}
+      className="w-full h-32 rounded-lg border border-white/10 shadow-inner relative cursor-crosshair overflow-hidden"
+      style={{ backgroundColor: getBg(), backgroundImage: getOverlays() }}
+    >
+      <div className="absolute w-3 h-3 border-2 border-white rounded-full shadow-md pointer-events-none"
+           style={{ left: `calc(${(node.channel2 / max2) * 100}% - 6px)`, top: `calc(${(1 - node.channel3 / max3) * 100}% - 6px)` }} />
     </div>
   );
 };
@@ -225,6 +324,7 @@ export default function App() {
   const [tooltip, setTooltip] = useState<{ text: string; visible: boolean }>({ text: '', visible: false });
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, worldX: number, worldY: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   const [uiScale, setUiScale] = useState(1);
   const [textScale, setTextScale] = useState(1);
@@ -250,8 +350,6 @@ export default function App() {
   const lastHueRef = useRef<number>(Math.floor(Math.random() * 360));
   const stageRef = useRef<any>(null);
   const trRef = useRef<any>(null);
-
-  const nodeMask = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Cdefs%3E%3Cmask id='hole'%3E%3Crect width='100%25' height='100%25' fill='white'/%3E%3Crect x='50%25' y='18' width='64' height='12' rx='6' fill='black' transform='translate(-32, 0)'/%3E%3C/mask%3E%3C/defs%3E%3Crect width='100%25' height='100%25' fill='black' mask='url(%23hole)'/%3E%3C/svg%3E")`;
 
   useEffect(() => {
     elementsRef.current = elements;
@@ -874,8 +972,8 @@ export default function App() {
         style={{ 
           backgroundColor: '#1a1a1a',
           backgroundImage: `
-            linear-gradient(45deg, #2a2a2a 25%, transparent 25%, transparent 75%, #2a2a2a 75%, #2a2a2a),
-            linear-gradient(45deg, #2a2a2a 25%, transparent 25%, transparent 75%, #2a2a2a 75%, #2a2a2a)
+            linear-gradient(45deg, #222222 25%, transparent 25%, transparent 75%, #222222 75%, #222222),
+            linear-gradient(45deg, #222222 25%, transparent 25%, transparent 75%, #222222 75%, #222222)
           `,
           backgroundSize: `${40 * stageScale}px ${40 * stageScale}px`, 
           backgroundPosition: `${stagePos.x * stageScale}px ${stagePos.y * stageScale}px, ${stagePos.x * stageScale + 20 * stageScale}px ${stagePos.y * stageScale + 20 * stageScale}px`
@@ -973,16 +1071,21 @@ export default function App() {
               const sourceNode = elements.find(e => e.id === targetNode.colorNodeId) as ColorNodeData | undefined;
               if (!sourceNode) return null;
               
+              const isSourceHovered = hoveredNodeId === sourceNode.id;
+              const isTargetHovered = hoveredNodeId === targetNode.id;
+              
               const startX = sourceNode.nodeX + (192 * uiScale);
-              const startY = sourceNode.nodeY + (72 * uiScale);
+              const startY = sourceNode.nodeY + (72 * uiScale) - (isSourceHovered ? 16 * uiScale : 0);
               const endX = targetNode.nodeX;
-              const endY = targetNode.nodeY + (72 * uiScale);
+              const endY = targetNode.nodeY + (72 * uiScale) - (isTargetHovered ? 16 * uiScale : 0);
 
               return (
                 <Path
                   key={`wire-${sourceNode.id}-${targetNode.id}`}
                   data={`M ${startX} ${startY} C ${startX + 60} ${startY}, ${endX - 60} ${endY}, ${endX} ${endY}`}
-                  stroke={getColorHex(sourceNode)}
+                  strokeLinearGradientStartPoint={{ x: startX, y: startY }}
+                  strokeLinearGradientEndPoint={{ x: endX, y: endY }}
+                  strokeLinearGradientColorStops={[0, getColorHex(sourceNode), 1, targetNode.highlightColor || '#3b82f6']}
                   strokeWidth={4 / stageScale}
                   lineCap="round"
                 />
@@ -1112,25 +1215,25 @@ export default function App() {
                 transformOrigin: 'top left'
               }}
               onPointerDown={(e) => handleNodePointerDown(e, colorNode)}
+              onMouseEnter={() => setHoveredNodeId(colorNode.id)}
+              onMouseLeave={() => setHoveredNodeId(null)}
             >
               <div className="group transition-transform duration-200 hover:-translate-y-4 relative">
+                
+                {/* Handle Cutout SVG */}
+                <svg width="192" height="32" className={`absolute bottom-full left-0 transition-all duration-200 ease-out origin-bottom cursor-grab active:cursor-grabbing ${hoveredNodeId === colorNode.id ? 'opacity-100 scale-y-100' : 'opacity-0 scale-y-0'}`}>
+                  <path fillRule="evenodd" clipRule="evenodd" d="M0 16C0 7.16344 7.16344 0 16 0H176C184.837 0 192 7.16344 192 16V32H0V16ZM64 12C64 8.68629 66.6863 6 70 6H122C125.314 6 128 8.68629 128 12C128 15.3137 125.314 18 122 18H70C66.6863 18 64 15.3137 64 12Z" fill={'#3b82f633'} />
+                </svg>
+
                 <div
-                  className="w-48 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl transition-shadow"
+                  className="w-48 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl transition-shadow relative z-10"
                   style={{
-                    boxShadow: selectedIds.includes(colorNode.id) ? `0 0 0 2px #3b82f6, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)',
-                    WebkitMaskImage: nodeMask,
-                    maskImage: nodeMask,
+                    boxShadow: selectedIds.includes(colorNode.id) ? `0 0 0 2px #3b82f6, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
                   }}
                 >
-                  {/* Transparent Handle Cutout */}
-                  <div
-                    className="h-12 w-full cursor-grab active:cursor-grabbing transition-colors hover:bg-white/5"
-                    style={{ backgroundColor: '#3b82f633' }}
-                  />
-                  
                   <div
                     className="px-3 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
-                    style={{ backgroundColor: '#3b82f61A', borderBottom: `1px solid #3b82f640` }}
+                    style={{ backgroundColor: '#3b82f61A', borderBottom: `1px solid #3b82f640`, borderTopLeftRadius: 12, borderTopRightRadius: 12 }}
                   >
                     <span className="font-bold text-white/90 text-sm">Color</span>
                     <button
@@ -1144,7 +1247,7 @@ export default function App() {
 
                   <div className="p-3 flex flex-col gap-3 cursor-default" onPointerDown={e => e.stopPropagation()}>
                     {/* Color Preview */}
-                    <div className="h-10 w-full rounded border border-white/10 shadow-inner" style={{ backgroundColor: getColorHex(colorNode) }} />
+                    <ColorPicker2D node={colorNode} onChange={v => handleUpdate(colorNode.id, v)} onCommit={v => handleUpdateEnd(colorNode.id, v)} />
                     
                     {/* Dropdown */}
                     <select 
@@ -1159,27 +1262,24 @@ export default function App() {
 
                     {/* Sliders */}
                     <div className="flex flex-col gap-2">
-                      {['channel1', 'channel2', 'channel3'].map((ch, i) => {
-                        const max = colorNode.colorMode === 'RGB' ? 255 : (i === 0 ? 360 : 100);
-                        const label = colorNode.colorMode[i];
-                        return (
-                          <div key={ch} className="flex items-center gap-2">
-                            <span className="text-xs text-zinc-400 w-3">{label}</span>
-                            <input 
-                              type="range" min="0" max={max} 
-                              value={colorNode[ch as keyof ColorNodeData] as number}
-                              onChange={e => handleUpdate(colorNode.id, { [ch]: parseInt(e.target.value) })}
-                              onMouseUp={e => handleUpdateEnd(colorNode.id, { [ch]: parseInt((e.target as HTMLInputElement).value) })}
-                              className="flex-1 accent-blue-500"
-                            />
-                          </div>
-                        )
-                      })}
+                      <div className="flex items-center gap-2">
+                         <span className="text-xs text-zinc-400 w-3">{colorNode.colorMode[0]}</span>
+                         <CustomSlider 
+                            value={colorNode.channel1} 
+                            min={0} 
+                            max={colorNode.colorMode === 'RGB' ? 255 : 360} 
+                            onChange={v => handleUpdate(colorNode.id, { channel1: v })}
+                            onCommit={v => handleUpdateEnd(colorNode.id, { channel1: v })}
+                          />
+                      </div>
+                      <ScrubbableInput textScale={textScale} label={colorNode.colorMode[0]} value={colorNode.channel1} onChange={v => handleUpdate(colorNode.id, { channel1: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel1: v })} tooltip="" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                      <ScrubbableInput textScale={textScale} label={colorNode.colorMode[1]} value={colorNode.channel2} onChange={v => handleUpdate(colorNode.id, { channel2: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel2: v })} tooltip="" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                      <ScrubbableInput textScale={textScale} label={colorNode.colorMode[2]} value={colorNode.channel3} onChange={v => handleUpdate(colorNode.id, { channel3: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel3: v })} tooltip="" showTooltip={showTooltip} hideTooltip={hideTooltip} />
                     </div>
                   </div>
                 </div>
                 
-                {/* Output Port (rendered outside the mask) */}
+                {/* Output Port */}
                 <div
                   className="absolute -right-3 top-[60px] w-6 h-6 rounded-full cursor-crosshair border-4 border-[#1a1a1a] z-50 hover:scale-110 transition-transform shadow-lg"
                   style={{ backgroundColor: getColorHex(colorNode) }}
@@ -1201,7 +1301,7 @@ export default function App() {
           {/* Nodes */}
           {nodes.map(node => {
             const colorNode = elements.find(e => e.id === node.colorNodeId) as ColorNodeData | undefined;
-            const portColor = colorNode ? getColorHex(colorNode) : '#52525b';
+            const portColor = node.highlightColor || '#52525b';
 
             return (
               <div
@@ -1213,25 +1313,25 @@ export default function App() {
                   transformOrigin: 'top left'
                 }}
                 onPointerDown={(e) => handleNodePointerDown(e, node)}
+                onMouseEnter={() => setHoveredNodeId(node.id)}
+                onMouseLeave={() => setHoveredNodeId(null)}
               >
                 <div className="group transition-transform duration-200 hover:-translate-y-4 relative">
+                  
+                  {/* Handle Cutout SVG */}
+                  <svg width="192" height="32" className={`absolute bottom-full left-0 transition-all duration-200 ease-out origin-bottom cursor-grab active:cursor-grabbing ${hoveredNodeId === node.id ? 'opacity-100 scale-y-100' : 'opacity-0 scale-y-0'}`}>
+                    <path fillRule="evenodd" clipRule="evenodd" d="M0 16C0 7.16344 7.16344 0 16 0H176C184.837 0 192 7.16344 192 16V32H0V16ZM64 12C64 8.68629 66.6863 6 70 6H122C125.314 6 128 8.68629 128 12C128 15.3137 125.314 18 122 18H70C66.6863 18 64 15.3137 64 12Z" fill={node.highlightColor + '33'} />
+                  </svg>
+
                   <div
-                    className="w-48 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl transition-shadow"
+                    className="w-48 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl transition-shadow relative z-10"
                     style={{
-                      boxShadow: selectedIds.includes(node.id) ? `0 0 0 2px ${node.highlightColor}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)',
-                      WebkitMaskImage: nodeMask,
-                      maskImage: nodeMask,
+                      boxShadow: selectedIds.includes(node.id) ? `0 0 0 2px ${node.highlightColor}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
                     }}
                   >
-                    {/* Transparent Handle Cutout */}
-                    <div
-                      className="h-12 w-full cursor-grab active:cursor-grabbing transition-colors hover:bg-white/5"
-                      style={{ backgroundColor: node.highlightColor + '33' }}
-                    />
-                    
                     <div
                       className="px-3 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
-                      style={{ backgroundColor: node.highlightColor + '1A', borderBottom: `1px solid ${node.highlightColor}40` }}
+                      style={{ backgroundColor: node.highlightColor + '1A', borderBottom: `1px solid ${node.highlightColor}40`, borderTopLeftRadius: 12, borderTopRightRadius: 12 }}
                     >
                       <div className="flex items-center gap-2 flex-1">
                         <button
@@ -1345,7 +1445,7 @@ export default function App() {
               className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 mb-2"
             />
             <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
-              {['Color Node'].filter(n => n.toLowerCase().includes(searchQuery.toLowerCase())).map(nodeName => (
+              {['Color'].filter(n => n.toLowerCase().includes(searchQuery.toLowerCase())).map(nodeName => (
                 <button
                   key={nodeName}
                   onClick={() => spawnNode('color')}
@@ -1354,7 +1454,7 @@ export default function App() {
                   {nodeName}
                 </button>
               ))}
-              {['Color Node'].filter(n => n.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
+              {['Color'].filter(n => n.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
                 <div className="text-xs text-zinc-500 px-3 py-2">No nodes found</div>
               )}
             </div>
