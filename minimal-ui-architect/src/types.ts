@@ -1,4 +1,4 @@
-export type ElementType = 'rectangle' | 'group';
+export type ElementType = 'node' | 'group' | 'color';
 
 export interface BaseElement {
   id: string;
@@ -7,10 +7,12 @@ export interface BaseElement {
   parentId?: string;
   type: ElementType;
   depth: number;
+  nodeX: number;
+  nodeY: number;
 }
 
-export interface Rectangle extends BaseElement {
-  type: 'rectangle';
+export interface NodeData extends BaseElement {
+  type: 'node';
   x: number;
   y: number;
   width: number;
@@ -18,16 +20,29 @@ export interface Rectangle extends BaseElement {
   fill: string;
   stroke: string;
   strokeWidth: number;
-  depth: number;
   cornerRadius: number;
   highlightColor: string;
+  colorNodeId?: string;
 }
 
 export interface GroupData extends BaseElement {
   type: 'group';
   expanded: boolean;
+  nodeWidth: number;
+  nodeHeight: number;
+  color: string;
+  opacity?: number;
 }
 
-export type CanvasElement = Rectangle | GroupData;
+export interface ColorNodeData extends BaseElement {
+  type: 'color';
+  colorMode: 'HSB' | 'HSL' | 'RGB';
+  channel1: number;
+  channel2: number;
+  channel3: number;
+  highlightColor: string;
+}
 
-export type Tool = 'select' | 'rectangle';
+export type CanvasElement = NodeData | GroupData | ColorNodeData;
+
+export type Tool = 'select' | 'node' | 'group' | 'hand' | 'zoom';
