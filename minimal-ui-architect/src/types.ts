@@ -39,6 +39,7 @@ export interface ColorNodeData extends BaseElement {
   channel1: number;
   channel2: number;
   channel3: number;
+  highlightColor: string;
 }
 
 export type CanvasElement = NodeData | GroupData | ColorNodeData;

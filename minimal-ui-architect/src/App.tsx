@@ -85,11 +85,15 @@ interface ScrubbableInputProps {
   hideTooltip: () => void;
   onHoverStart?: () => void;
   onHoverEnd?: () => void;
+  onInteractionStart?: () => void;
+  onInteractionEnd?: () => void;
   textScale: number;
+  min?: number;
+  max?: number;
 }
 
 const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
-  value, onChange, onCommit, label, tooltip, showTooltip, hideTooltip, onHoverStart, onHoverEnd, textScale
+  value, onChange, onCommit, label, tooltip, showTooltip, hideTooltip, onHoverStart, onHoverEnd, onInteractionStart, onInteractionEnd, textScale, min, max
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState(value.toString());
@@ -106,6 +110,7 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
       if (document.pointerLockElement !== containerRef.current && isDragging.current) {
         isDragging.current = false;
         onCommit(Math.round(startVal.current));
+        onInteractionEnd?.();
       }
     };
     document.addEventListener('pointerlockchange', handleLockChange);
@@ -119,6 +124,7 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
     const initialY = e.clientY;
     isDragging.current = false;
     startVal.current = value;
+    onInteractionStart?.();
 
     const handleMouseMove = (me: MouseEvent) => {
       if (!isDragging.current) {
@@ -132,7 +138,10 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
       if (isDragging.current) {
         let movementX = me.movementX || 0;
         if (Math.abs(movementX) > 500) movementX = 0;
-        startVal.current += movementX;
+        let nextVal = startVal.current + movementX;
+        if (min !== undefined) nextVal = Math.max(min, nextVal);
+        if (max !== undefined) nextVal = Math.min(max, nextVal);
+        startVal.current = nextVal;
         onChange(Math.round(startVal.current));
       }
     };
@@ -147,6 +156,7 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
         }
       }
       isDragging.current = false;
+      onInteractionEnd?.();
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
@@ -157,12 +167,15 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
 
   const handleBlur = () => {
     setIsEditing(false);
-    const parsed = parseInt(inputValue);
+    let parsed = parseInt(inputValue);
     if (!isNaN(parsed)) {
+      if (min !== undefined) parsed = Math.max(min, parsed);
+      if (max !== undefined) parsed = Math.min(max, parsed);
       onCommit(parsed);
     } else {
       setInputValue(value.toString());
     }
+    onInteractionEnd?.();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -172,7 +185,7 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
   };
 
   return (
-    <div className="flex items-center justify-between group/scrub" onMouseDown={e => e.stopPropagation()}>
+    <div className="flex items-center gap-2 group/scrub flex-1" onMouseDown={e => e.stopPropagation()}>
       <label
         className="text-zinc-400 flex items-center gap-1 cursor-help select-none"
         style={{ fontSize: `${11 * textScale}px` }}
@@ -190,7 +203,7 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           style={{ fontSize: `${11 * textScale}px` }}
-          className="w-12 text-right bg-transparent text-white outline-none border-b border-blue-500"
+          className="min-w-[2rem] text-left bg-transparent text-white outline-none border-b border-blue-500"
         />
       ) : (
         <div
@@ -199,7 +212,7 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
           onMouseEnter={onHoverStart}
           onMouseLeave={onHoverEnd}
           style={{ fontSize: `${11 * textScale}px` }}
-          className="w-12 text-right cursor-ew-resize select-none text-zinc-300 hover:text-white transition-colors bg-transparent border-none outline-none"
+          className="min-w-[2rem] text-left cursor-ew-resize select-none text-zinc-300 hover:text-white transition-colors bg-transparent border-none outline-none"
         >
           {Math.round(value)}
         </div>
@@ -209,7 +222,7 @@ const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
 };
 
 // --- Custom Slider Component ---
-const CustomSlider = ({ value, min, max, onChange, onCommit }: { value: number, min: number, max: number, onChange: (v: number) => void, onCommit: (v: number) => void }) => {
+const CustomSlider = ({ value, min, max, onChange, onCommit, onInteractionStart, onInteractionEnd }: { value: number, min: number, max: number, onChange: (v: number) => void, onCommit: (v: number) => void, onInteractionStart?: () => void, onInteractionEnd?: () => void }) => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.shiftKey) {
       if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
@@ -230,8 +243,12 @@ const CustomSlider = ({ value, min, max, onChange, onCommit }: { value: number, 
     <input 
       type="range" min={min} max={max} 
       value={value}
+      onMouseDown={onInteractionStart}
       onChange={e => onChange(parseInt(e.target.value))}
-      onMouseUp={e => onCommit(parseInt((e.target as HTMLInputElement).value))}
+      onMouseUp={e => {
+        onCommit(parseInt((e.target as HTMLInputElement).value));
+        onInteractionEnd?.();
+      }}
       onKeyDown={handleKeyDown}
       className="flex-1 accent-blue-500"
     />
@@ -283,22 +300,14 @@ const ColorPicker2D = ({ node, onChange, onCommit }: { node: ColorNodeData, onCh
     window.addEventListener('pointerup', onPointerUp);
   };
 
-  const getBg = () => {
-    if (node.colorMode === 'HSB' || node.colorMode === 'HSL') return `hsl(${node.channel1}, 100%, 50%)`;
-    return `rgb(${node.channel1}, 0, 0)`; 
-  };
-
-  const getOverlays = () => {
-    if (node.colorMode === 'HSB') return `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent)`;
-    if (node.colorMode === 'HSL') return `linear-gradient(to top, #000, transparent), linear-gradient(to right, #808080, transparent)`;
-    return `linear-gradient(to top, #00f, transparent), linear-gradient(to right, #0f0, transparent)`;
-  };
+  const getBg = () => `hsl(${node.channel1}, 100%, 50%)`;
+  const getOverlays = () => `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent)`;
 
   return (
     <div 
       ref={areaRef}
       onPointerDown={handlePointerDown}
-      className="w-full h-32 rounded-lg border border-white/10 shadow-inner relative cursor-crosshair overflow-hidden"
+      className="w-full h-32 rounded-lg relative cursor-crosshair overflow-hidden"
       style={{ backgroundColor: getBg(), backgroundImage: getOverlays() }}
     >
       <div className="absolute w-3 h-3 border-2 border-white rounded-full shadow-md pointer-events-none"
@@ -320,11 +329,12 @@ export default function App() {
   const clipboardRef = useRef(clipboard);
 
   const [tool, setTool] = useState<Tool>('select');
-  const [prevTool, setPrevTool] = useState<Tool>('select');
+  const [prevTool, setToolPrev] = useState<Tool>('select');
   const [tooltip, setTooltip] = useState<{ text: string; visible: boolean }>({ text: '', visible: false });
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, worldX: number, worldY: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [interactingId, setInteractingId] = useState<string | null>(null);
 
   const [uiScale, setUiScale] = useState(1);
   const [textScale, setTextScale] = useState(1);
@@ -455,7 +465,7 @@ export default function App() {
       }
 
       if (e.code === 'Space' && tool !== 'hand') {
-        setPrevTool(tool);
+        setToolPrev(tool);
         setTool('hand');
       }
       if (e.key.toLowerCase() === 'z' && tool !== 'zoom') {
@@ -525,7 +535,8 @@ export default function App() {
       colorMode: 'HSB',
       channel1: Math.floor(Math.random() * 360),
       channel2: 80,
-      channel3: 90
+      channel3: 90,
+      highlightColor: generateDistinctColor()
     };
     pushToHistory([...elements, newNode]);
     setContextMenu(null);
@@ -1044,7 +1055,7 @@ export default function App() {
                   }}
                   strokeScaleEnabled={false}
                   stroke={selectedIds.includes(node.id) ? node.highlightColor : 'transparent'}
-                  strokeWidth={selectedIds.includes(node.id) ? 4 / stageScale : 0}
+                  strokeWidth={selectedIds.includes(node.id) && transformingNode?.id !== node.id && interactingId !== node.id ? 2 / stageScale : 0}
                   opacity={node.visible ? 1 : 0}
                 />
               );
@@ -1085,7 +1096,7 @@ export default function App() {
                   data={`M ${startX} ${startY} C ${startX + 60} ${startY}, ${endX - 60} ${endY}, ${endX} ${endY}`}
                   strokeLinearGradientStartPoint={{ x: startX, y: startY }}
                   strokeLinearGradientEndPoint={{ x: endX, y: endY }}
-                  strokeLinearGradientColorStops={[0, getColorHex(sourceNode), 1, targetNode.highlightColor || '#3b82f6']}
+                  strokeLinearGradientColorStops={[0, sourceNode.highlightColor || '#3b82f6', 1, targetNode.highlightColor || '#3b82f6']}
                   strokeWidth={4 / stageScale}
                   lineCap="round"
                 />
@@ -1122,6 +1133,8 @@ export default function App() {
                   ref={trRef}
                   boundBoxFunc={(oldBox, newBox) => (newBox.width < 5 || newBox.height < 5) ? oldBox : newBox}
                   rotateEnabled={false}
+                  keepRatio={false}
+                  shiftBehavior="invertRatio"
                   anchorStroke={color}
                   anchorFill={color}
                   anchorSize={8 / stageScale}
@@ -1218,22 +1231,22 @@ export default function App() {
               onMouseEnter={() => setHoveredNodeId(colorNode.id)}
               onMouseLeave={() => setHoveredNodeId(null)}
             >
-              <div className="group transition-transform duration-200 hover:-translate-y-4 relative">
+              <div className="group transition-transform duration-200 relative">
                 
                 {/* Handle Cutout SVG */}
                 <svg width="192" height="32" className={`absolute bottom-full left-0 transition-all duration-200 ease-out origin-bottom cursor-grab active:cursor-grabbing ${hoveredNodeId === colorNode.id ? 'opacity-100 scale-y-100' : 'opacity-0 scale-y-0'}`}>
-                  <path fillRule="evenodd" clipRule="evenodd" d="M0 16C0 7.16344 7.16344 0 16 0H176C184.837 0 192 7.16344 192 16V32H0V16ZM64 12C64 8.68629 66.6863 6 70 6H122C125.314 6 128 8.68629 128 12C128 15.3137 125.314 18 122 18H70C66.6863 18 64 15.3137 64 12Z" fill={'#3b82f633'} />
+                  <path fillRule="evenodd" clipRule="evenodd" d="M0 16C0 7.16344 7.16344 0 16 0H176C184.837 0 192 7.16344 192 16V32H0V16ZM64 12C64 8.68629 66.6863 6 70 6H122C125.314 6 128 8.68629 128 12C128 15.3137 125.314 18 122 18H70C66.6863 18 64 15.3137 64 12Z" fill={colorNode.highlightColor || '#3b82f6'} />
                 </svg>
 
                 <div
                   className="w-48 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl transition-shadow relative z-10"
                   style={{
-                    boxShadow: selectedIds.includes(colorNode.id) ? `0 0 0 2px #3b82f6, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
+                    boxShadow: selectedIds.includes(colorNode.id) ? `0 0 0 2px ${colorNode.highlightColor || '#3b82f6'}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)'
                   }}
                 >
                   <div
                     className="px-3 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
-                    style={{ backgroundColor: '#3b82f61A', borderBottom: `1px solid #3b82f640`, borderTopLeftRadius: 12, borderTopRightRadius: 12 }}
+                    style={{ backgroundColor: (colorNode.highlightColor || '#3b82f6') + '1A', borderBottom: `1px solid ${colorNode.highlightColor || '#3b82f6'}40`, borderTopLeftRadius: 12, borderTopRightRadius: 12 }}
                   >
                     <span className="font-bold text-white/90 text-sm">Color</span>
                     <button
@@ -1262,19 +1275,18 @@ export default function App() {
 
                     {/* Sliders */}
                     <div className="flex flex-col gap-2">
-                      <div className="flex items-center gap-2">
-                         <span className="text-xs text-zinc-400 w-3">{colorNode.colorMode[0]}</span>
-                         <CustomSlider 
-                            value={colorNode.channel1} 
-                            min={0} 
-                            max={colorNode.colorMode === 'RGB' ? 255 : 360} 
-                            onChange={v => handleUpdate(colorNode.id, { channel1: v })}
-                            onCommit={v => handleUpdateEnd(colorNode.id, { channel1: v })}
-                          />
+                      <div className="flex items-center gap-2 group/scrub">
+                         <ScrubbableInput textScale={textScale} label={colorNode.colorMode[0]} value={colorNode.channel1} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 360} onChange={v => handleUpdate(colorNode.id, { channel1: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel1: v })} tooltip="" showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
+                         <CustomSlider value={colorNode.channel1} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 360} onChange={v => handleUpdate(colorNode.id, { channel1: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel1: v })} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
                       </div>
-                      <ScrubbableInput textScale={textScale} label={colorNode.colorMode[0]} value={colorNode.channel1} onChange={v => handleUpdate(colorNode.id, { channel1: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel1: v })} tooltip="" showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                      <ScrubbableInput textScale={textScale} label={colorNode.colorMode[1]} value={colorNode.channel2} onChange={v => handleUpdate(colorNode.id, { channel2: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel2: v })} tooltip="" showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                      <ScrubbableInput textScale={textScale} label={colorNode.colorMode[2]} value={colorNode.channel3} onChange={v => handleUpdate(colorNode.id, { channel3: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel3: v })} tooltip="" showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                      <div className="flex items-center gap-2 group/scrub">
+                         <ScrubbableInput textScale={textScale} label={colorNode.colorMode[1]} value={colorNode.channel2} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 100} onChange={v => handleUpdate(colorNode.id, { channel2: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel2: v })} tooltip="" showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
+                         <CustomSlider value={colorNode.channel2} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 100} onChange={v => handleUpdate(colorNode.id, { channel2: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel2: v })} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      </div>
+                      <div className="flex items-center gap-2 group/scrub">
+                         <ScrubbableInput textScale={textScale} label={colorNode.colorMode[2]} value={colorNode.channel3} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 100} onChange={v => handleUpdate(colorNode.id, { channel3: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel3: v })} tooltip="" showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
+                         <CustomSlider value={colorNode.channel3} min={0} max={colorNode.colorMode === 'RGB' ? 255 : 100} onChange={v => handleUpdate(colorNode.id, { channel3: v })} onCommit={v => handleUpdateEnd(colorNode.id, { channel3: v })} onInteractionStart={() => setInteractingId(colorNode.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1282,7 +1294,7 @@ export default function App() {
                 {/* Output Port */}
                 <div
                   className="absolute -right-3 top-[60px] w-6 h-6 rounded-full cursor-crosshair border-4 border-[#1a1a1a] z-50 hover:scale-110 transition-transform shadow-lg"
-                  style={{ backgroundColor: getColorHex(colorNode) }}
+                  style={{ backgroundColor: colorNode.highlightColor || '#3b82f6' }}
                   onPointerDown={(e) => {
                     e.stopPropagation();
                     setDrawingWire({
@@ -1316,11 +1328,11 @@ export default function App() {
                 onMouseEnter={() => setHoveredNodeId(node.id)}
                 onMouseLeave={() => setHoveredNodeId(null)}
               >
-                <div className="group transition-transform duration-200 hover:-translate-y-4 relative">
+                <div className="group transition-transform duration-200 relative">
                   
                   {/* Handle Cutout SVG */}
                   <svg width="192" height="32" className={`absolute bottom-full left-0 transition-all duration-200 ease-out origin-bottom cursor-grab active:cursor-grabbing ${hoveredNodeId === node.id ? 'opacity-100 scale-y-100' : 'opacity-0 scale-y-0'}`}>
-                    <path fillRule="evenodd" clipRule="evenodd" d="M0 16C0 7.16344 7.16344 0 16 0H176C184.837 0 192 7.16344 192 16V32H0V16ZM64 12C64 8.68629 66.6863 6 70 6H122C125.314 6 128 8.68629 128 12C128 15.3137 125.314 18 122 18H70C66.6863 18 64 15.3137 64 12Z" fill={node.highlightColor + '33'} />
+                    <path fillRule="evenodd" clipRule="evenodd" d="M0 16C0 7.16344 7.16344 0 16 0H176C184.837 0 192 7.16344 192 16V32H0V16ZM64 12C64 8.68629 66.6863 6 70 6H122C125.314 6 128 8.68629 128 12C128 15.3137 125.314 18 122 18H70C66.6863 18 64 15.3137 64 12Z" fill={node.highlightColor} />
                   </svg>
 
                   <div
@@ -1388,12 +1400,12 @@ export default function App() {
                     </div>
 
                     <div className="p-3 flex flex-col gap-2 cursor-default" onPointerDown={e => e.stopPropagation()}>
-                      <ScrubbableInput textScale={textScale} label="Width" value={node.width} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { width: v }) : handleUpdate(node.id, { width: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { width: v }) : handleUpdateEnd(node.id, { width: v })} tooltip={TOOLTIPS.width} showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                      <ScrubbableInput textScale={textScale} label="Height" value={node.height} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { height: v }) : handleUpdate(node.id, { height: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { height: v }) : handleUpdateEnd(node.id, { height: v })} tooltip={TOOLTIPS.height} showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                      <ScrubbableInput textScale={textScale} label="Left/Right" value={node.x} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { x: v }) : handleUpdate(node.id, { x: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { x: v }) : handleUpdateEnd(node.id, { x: v })} tooltip={TOOLTIPS.leftRight} showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                      <ScrubbableInput textScale={textScale} label="Up/Down" value={node.y} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { y: v }) : handleUpdate(node.id, { y: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { y: v }) : handleUpdateEnd(node.id, { y: v })} tooltip={TOOLTIPS.upDown} showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                      <ScrubbableInput textScale={textScale} label="Depth" value={node.depth} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { depth: v }) : handleUpdate(node.id, { depth: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { depth: v }) : handleUpdateEnd(node.id, { depth: v })} tooltip={TOOLTIPS.depth} showTooltip={showTooltip} hideTooltip={hideTooltip} />
-                      <ScrubbableInput textScale={textScale} label="Corner Roundness" value={node.cornerRadius} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { cornerRadius: v }) : handleUpdate(node.id, { cornerRadius: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { cornerRadius: v }) : handleUpdateEnd(node.id, { cornerRadius: v })} tooltip={TOOLTIPS.cornerRoundness} showTooltip={showTooltip} hideTooltip={hideTooltip} />
+                      <ScrubbableInput textScale={textScale} label="Width" value={node.width} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { width: v }) : handleUpdate(node.id, { width: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { width: v }) : handleUpdateEnd(node.id, { width: v })} tooltip={TOOLTIPS.width} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <ScrubbableInput textScale={textScale} label="Height" value={node.height} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { height: v }) : handleUpdate(node.id, { height: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { height: v }) : handleUpdateEnd(node.id, { height: v })} tooltip={TOOLTIPS.height} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <ScrubbableInput textScale={textScale} label="Left/Right" value={node.x} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { x: v }) : handleUpdate(node.id, { x: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { x: v }) : handleUpdateEnd(node.id, { x: v })} tooltip={TOOLTIPS.leftRight} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <ScrubbableInput textScale={textScale} label="Up/Down" value={node.y} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { y: v }) : handleUpdate(node.id, { y: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { y: v }) : handleUpdateEnd(node.id, { y: v })} tooltip={TOOLTIPS.upDown} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <ScrubbableInput textScale={textScale} label="Depth" value={node.depth} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { depth: v }) : handleUpdate(node.id, { depth: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { depth: v }) : handleUpdateEnd(node.id, { depth: v })} tooltip={TOOLTIPS.depth} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
+                      <ScrubbableInput textScale={textScale} label="Corner Roundness" value={node.cornerRadius} onChange={v => selectedIds.includes(node.id) ? handleBulkUpdate(selectedIds, { cornerRadius: v }) : handleUpdate(node.id, { cornerRadius: v })} onCommit={v => selectedIds.includes(node.id) ? handleBulkUpdateEnd(selectedIds, { cornerRadius: v }) : handleUpdateEnd(node.id, { cornerRadius: v })} tooltip={TOOLTIPS.cornerRoundness} showTooltip={showTooltip} hideTooltip={hideTooltip} onInteractionStart={() => setInteractingId(node.id)} onInteractionEnd={() => setInteractingId(null)} />
                     </div>
                   </div>
                   
