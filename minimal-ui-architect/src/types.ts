@@ -1,4 +1,4 @@
-export type ElementType = 'node' | 'group';
+export type ElementType = 'node' | 'group' | 'color';
 
 export interface BaseElement {
   id: string;
@@ -22,6 +22,7 @@ export interface NodeData extends BaseElement {
   strokeWidth: number;
   cornerRadius: number;
   highlightColor: string;
+  colorNodeId?: string;
 }
 
 export interface GroupData extends BaseElement {
@@ -32,6 +33,14 @@ export interface GroupData extends BaseElement {
   color: string;
 }
 
-export type CanvasElement = NodeData | GroupData;
+export interface ColorNodeData extends BaseElement {
+  type: 'color';
+  colorMode: 'HSB' | 'HSL' | 'RGB';
+  channel1: number;
+  channel2: number;
+  channel3: number;
+}
+
+export type CanvasElement = NodeData | GroupData | ColorNodeData;
 
 export type Tool = 'select' | 'node' | 'group' | 'hand' | 'zoom';
