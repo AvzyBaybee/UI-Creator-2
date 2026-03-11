@@ -41,6 +41,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); }, [settings]);
   const updateSetting = (key: keyof typeof DEFAULT_SETTINGS, val: any) => setSettings(prev => ({ ...prev, [key]: val }));
   const [isSettingsOpen, setIsSettingsOpen] = useState(false); const [isGridSettingsOpen, setIsGridSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'canvas' | 'tiles' | 'visuals'>('canvas');
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [stageScale, setStageScale] = useState(1); const [isDrawing, setIsDrawing] = useState(false);
   const [isDrawingGroup, setIsDrawingGroup] = useState(false); const [isSelecting, setIsSelecting] = useState(false);
@@ -216,8 +217,21 @@ export default function App() {
     if (isZooming && zoomStartRef.current) {
       const dx = e.evt.clientX - zoomStartRef.current.clientX; const newScale = Math.max(0.1, Math.min(zoomStartRef.current.scale * (1 + dx * 0.01), 5));
       setStageScale(newScale); setStagePos({ x: pos.x - zoomStartRef.current.mousePointTo.x * newScale, y: pos.y - zoomStartRef.current.mousePointTo.y * newScale });
-    } else if (isDrawing && newTileStart && currentDrawingTile) setCurrentDrawingTile({ ...currentDrawingTile, x: Math.min(newTileStart.x, roundedWorldPos.x), y: Math.min(newTileStart.y, roundedWorldPos.y), width: Math.max(1, Math.abs(roundedWorldPos.x - newTileStart.x)), height: Math.max(1, Math.abs(roundedWorldPos.y - newTileStart.y)) });
-    else if (isDrawingGroup && newTileStart && currentDrawingGroup) setCurrentDrawingGroup({ ...currentDrawingGroup, tileX: Math.min(newTileStart.x, roundedWorldPos.x), tileY: Math.min(newTileStart.y, roundedWorldPos.y), tileWidth: Math.max(1, Math.abs(roundedWorldPos.x - newTileStart.x)), tileHeight: Math.max(1, Math.abs(roundedWorldPos.y - newTileStart.y)) });
+    } else if (isDrawing && newTileStart && currentDrawingTile) {
+      let nx = roundedWorldPos.x; let ny = roundedWorldPos.y;
+      if (e.evt.shiftKey && settings.gridSize > 0) {
+        nx = Math.round(nx / settings.gridSize) * settings.gridSize;
+        ny = Math.round(ny / settings.gridSize) * settings.gridSize;
+      }
+      setCurrentDrawingTile({ ...currentDrawingTile, x: Math.min(newTileStart.x, nx), y: Math.min(newTileStart.y, ny), width: Math.max(1, Math.abs(nx - newTileStart.x)), height: Math.max(1, Math.abs(ny - newTileStart.y)) });
+    } else if (isDrawingGroup && newTileStart && currentDrawingGroup) {
+      let nx = roundedWorldPos.x; let ny = roundedWorldPos.y;
+      if (e.evt.shiftKey && settings.gridSize > 0) {
+        nx = Math.round(nx / settings.gridSize) * settings.gridSize;
+        ny = Math.round(ny / settings.gridSize) * settings.gridSize;
+      }
+      setCurrentDrawingGroup({ ...currentDrawingGroup, tileX: Math.min(newTileStart.x, nx), tileY: Math.min(newTileStart.y, ny), tileWidth: Math.max(1, Math.abs(nx - newTileStart.x)), tileHeight: Math.max(1, Math.abs(ny - newTileStart.y)) });
+    }
     else if (isSelecting && selectionStart) setSelectionRect({ x: Math.min(selectionStart.x, roundedWorldPos.x), y: Math.min(selectionStart.y, roundedWorldPos.y), width: Math.abs(roundedWorldPos.x - selectionStart.x), height: Math.abs(roundedWorldPos.y - selectionStart.y) });
   };
 
@@ -295,7 +309,7 @@ export default function App() {
     const onPointerMove = (me: PointerEvent) => {
       const dx = Math.round((me.clientX - startX) / stageScale); const dy = Math.round((me.clientY - startY) / stageScale);
       setElements(prev => {
-        const nextElements = prev.map(p => { 
+        return prev.map(p => { 
           const s = startPositions.find(sp => sp.id === p.id); 
           if (s) {
             let nx = s.x + dx;
@@ -308,38 +322,6 @@ export default function App() {
           }
           return p; 
         });
-
-        if (cur.length === 1) {
-          const draggedId = cur[0];
-          const dragged = nextElements.find(e => e.id === draggedId);
-          if (dragged && (dragged.type === 'tile' || dragged.type === 'color')) {
-            const draggedHeight = tileHeightsRef.current[draggedId] || 200;
-            const draggedCenterY = dragged.tileY + draggedHeight / 2;
-            const target = nextElements.find(other => {
-              if (other.id === draggedId || (other.type !== 'tile' && other.type !== 'color')) return false;
-              if (other.parentId !== dragged.parentId) return false;
-              const otherHeight = tileHeightsRef.current[other.id] || 200;
-              const otherCenterY = other.tileY + otherHeight / 2;
-              const horizontalOverlap = Math.abs(dragged.tileX - other.tileX) < 100;
-              if (!horizontalOverlap) return false;
-              const sDragged = startPositions.find(sp => sp.id === draggedId);
-              const sOther = startPositions.find(sp => sp.id === other.id) || { x: other.tileX, y: other.tileY, id: other.id };
-              if (!startPositions.find(sp => sp.id === other.id)) startPositions.push(sOther);
-              const wasAbove = sDragged!.y < sOther.y;
-              const isBelow = draggedCenterY > otherCenterY;
-              return wasAbove ? isBelow : !isBelow;
-            });
-            if (target) {
-              const sDragged = startPositions.find(sp => sp.id === draggedId)!;
-              const sOther = startPositions.find(sp => sp.id === target.id)!;
-              const tx = sDragged.x; const ty = sDragged.y;
-              sDragged.x = sOther.x; sDragged.y = sOther.y;
-              sOther.x = tx; sOther.y = ty;
-              return nextElements.map(e => e.id === target.id ? { ...e, tileX: sOther.x, tileY: sOther.y } : e);
-            }
-          }
-        }
-        return nextElements;
       });
     };
     const onPointerUp = () => {
@@ -497,7 +479,7 @@ export default function App() {
         >
           <Layer>
             {patternImage && <Rect name="bg-rect" x={-stagePos.x / stageScale} y={-stagePos.y / stageScale} width={window.innerWidth / stageScale} height={window.innerHeight / stageScale} fillPatternImage={patternImage} />}
-            {settings.showGrid && gridPatternImage && <Rect name="grid-rect" x={-stagePos.x / stageScale} y={-stagePos.y / stageScale} width={window.innerWidth / stageScale} height={window.innerHeight / stageScale} fillPatternImage={gridPatternImage} />}
+            {settings.showGrid && gridPatternImage && <Rect name="grid-rect" x={-stagePos.x / stageScale} y={-stagePos.y / stageScale} width={window.innerWidth / stageScale} height={window.innerHeight / stageScale} fillPatternImage={gridPatternImage} fillPatternOffset={{ x: stagePos.x / stageScale, y: stagePos.y / stageScale }} />}
             {tiles.sort((a,b)=>(a.depth||0)-(b.depth||0)).map((tile) => {
               const colorTile = elements.find(e => e.id === tile.colorTileId) as ColorTileData | undefined;
               const fill = colorTile ? getColorHex(colorTile) : tile.fill;
@@ -613,8 +595,8 @@ export default function App() {
                     <button onPointerDown={e => e.stopPropagation()} onMouseEnter={() => showTooltip(TOOLTIPS.delete)} onMouseLeave={hideTooltip} onClick={() => handleDeleteMultiple(selectedIds.includes(g.id) ? selectedIds : [g.id])} className="text-white/50 hover:text-red-400"><Trash2 size={14 * settings.textScale} /></button>
                   </div>
                 </div>
-                <div className="absolute -right-2 top-0 bottom-0 w-4 cursor-ew-resize pointer-events-auto" onPointerDown={e => { e.stopPropagation(); const sx = e.clientX; const sw = g.tileWidth; const move = (me:any) => handleUpdate(g.id, { tileWidth: Math.max(50, sw + (me.clientX - sx) / stageScale) }); const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); pushToHistory(elementsRef.current); }; window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); }} />
-                <div className="absolute -bottom-2 left-0 right-0 h-4 cursor-ns-resize pointer-events-auto" onPointerDown={e => { e.stopPropagation(); const sy = e.clientY; const sh = g.tileHeight; const move = (me:any) => handleUpdate(g.id, { tileHeight: Math.max(50, sh + (me.clientY - sy) / stageScale) }); const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); pushToHistory(elementsRef.current); }; window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); }} />
+                <div className="absolute -right-2 top-0 bottom-0 w-4 cursor-ew-resize pointer-events-auto" onPointerDown={e => { e.stopPropagation(); const sx = e.clientX; const sw = g.tileWidth; const move = (me:any) => { let nw = sw + (me.clientX - sx) / stageScale; if (me.shiftKey && settings.gridSize > 0) nw = Math.round((g.tileX + nw) / settings.gridSize) * settings.gridSize - g.tileX; handleUpdate(g.id, { tileWidth: Math.max(50, nw) }); }; const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); pushToHistory(elementsRef.current); }; window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); }} />
+                <div className="absolute -bottom-2 left-0 right-0 h-4 cursor-ns-resize pointer-events-auto" onPointerDown={e => { e.stopPropagation(); const sy = e.clientY; const sh = g.tileHeight; const move = (me:any) => { let nh = sh + (me.clientY - sy) / stageScale; if (me.shiftKey && settings.gridSize > 0) nh = Math.round((g.tileY + nh) / settings.gridSize) * settings.gridSize - g.tileY; handleUpdate(g.id, { tileHeight: Math.max(50, nh) }); }; const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); pushToHistory(elementsRef.current); }; window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); }} />
               </motion.div>
             );
           })}
@@ -637,9 +619,22 @@ export default function App() {
                   <div className="absolute bottom-full left-0 w-full h-8 z-10 cursor-grab active:cursor-grabbing" onPointerDown={(e) => handleTilePointerDown(e, el, true)} />
                   
                   <div className={`absolute origin-bottom pointer-events-auto cursor-grab active:cursor-grabbing transition-all duration-300 ease-out ${isSettingsOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 group-hover/node:opacity-100 group-hover/node:translate-y-0'}`} 
-                       style={{ width: elWidth + 6, height: settings.handleHeight, left: -3, bottom: `calc(100% + ${settings.handleY}px)`, borderTopLeftRadius: 12, borderTopRightRadius: 12, backgroundColor: (el as any).highlightColor || '#3b82f6', zIndex: -1 }} 
+                       style={{ 
+                         width: elWidth + 4, 
+                         height: settings.handleHeight, 
+                         left: -2, 
+                         bottom: `calc(100% + ${settings.handleY}px)`, 
+                         borderTopLeftRadius: 12, 
+                         borderTopRightRadius: 12, 
+                         backgroundColor: (el as any).highlightColor || '#3b82f6', 
+                         zIndex: -1,
+                         maskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='40' preserveAspectRatio='none'%3E%3Cpath d='M0 0h100v40H0zM30 15h40v10H30z' fill-rule='evenodd'/%3E%3C/svg%3E")`,
+                         WebkitMaskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='40' preserveAspectRatio='none'%3E%3Cpath d='M0 0h100v40H0zM30 15h40v10H30z' fill-rule='evenodd'/%3E%3C/svg%3E")`,
+                         maskSize: '100% 100%',
+                         maskRepeat: 'no-repeat'
+                       }} 
                        onPointerDown={(e) => handleTilePointerDown(e, el, true)}>
-                    <div className="mx-auto mt-2 bg-white/30" style={{ width: '80%', height: 6, borderRadius: 9999 }} />
+                    <div className="mx-auto mt-2 bg-white/30" style={{ width: '80%', height: 6, borderRadius: 9999, display: 'none' }} />
                   </div>
                   
                   <div ref={r => onTileRef(r, el.id)} className="bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl relative z-20 overflow-hidden" style={{ width: elWidth, boxShadow: (isSelected || hoveredTileId === el.id) ? `0 0 0 2px ${(el as any).highlightColor || '#3b82f6'}, 0 10px 30px rgba(0,0,0,0.5)` : '0 10px 30px rgba(0,0,0,0.5)' }} onPointerDown={(e) => handleTilePointerDown(e, el)}>
@@ -648,7 +643,8 @@ export default function App() {
                     </div>
                     <div className="relative">
                       <div className="absolute top-0 left-0 right-0 overflow-hidden z-30 pointer-events-none" style={{ height: settings.tileToolbarHeight }}>
-                        <div className="flex items-center justify-between px-4 w-full h-full transition-transform" style={{ backgroundColor: hexToRgba(theme.hex, settings.tileToolbarOpacity), borderBottom: `1px solid ${theme.hex}40`, transform: (isSettingsOpen || hoveredTileId === el.id) ? 'translateY(0)' : 'translateY(-100%)' }}>
+                        <div className="absolute inset-0" style={{ backgroundColor: hexToRgba(theme.hex, settings.tileToolbarOpacity), borderBottom: `1px solid ${theme.hex}40` }} />
+                        <div className="flex items-center justify-between px-4 w-full h-full transition-transform" style={{ transform: (isSettingsOpen || hoveredTileId === el.id) ? 'translateY(0)' : 'translateY(-100%)' }}>
                           {el.type === 'tile' && (
                             <button onPointerDown={e => e.stopPropagation()} onMouseEnter={() => showTooltip(TOOLTIPS.visibility)} onMouseLeave={hideTooltip} onClick={(e) => { e.stopPropagation(); handleBulkUpdateEnd(isSelected?selectedIds:[el.id], { visible: !(el as any).visible }); }} className="text-white/70 hover:text-white pointer-events-auto">{(el as any).visible ? <Eye size={16 * settings.tileIconScale} /> : <EyeOff size={16 * settings.tileIconScale} />}</button>
                           )}
@@ -658,7 +654,7 @@ export default function App() {
                           <button onPointerDown={e => e.stopPropagation()} onMouseEnter={() => showTooltip(TOOLTIPS.delete)} onMouseLeave={hideTooltip} onClick={(e) => { e.stopPropagation(); handleDeleteMultiple(isSelected ? selectedIds : [el.id]); }} className="text-white/50 hover:text-red-400 pointer-events-auto"><Trash2 size={14 * settings.tileIconScale} /></button>
                         </div>
                       </div>
-                      <div className="flex flex-col gap-2 cursor-default relative z-10" style={{ padding: `${settings.tileToolbarHeight + 12}px ${settings.rowPaddingX}px 12px` }} onPointerDown={e => e.stopPropagation()}>
+                      <div className="flex flex-col gap-2 cursor-default relative z-10" style={{ padding: `${settings.tileToolbarHeight + 12}px ${settings.rowPaddingX}px ${12 + (el.type === 'tile' ? settings.tileBottomPadding : 0)}px` }} onPointerDown={e => e.stopPropagation()}>
                         {el.type === 'color' ? (
                           <>
                             <ColorPicker2D tile={el} onChange={(v:any) => handleUpdate(el.id, v)} onCommit={(v:any) => handleUpdateEnd(el.id, v)} />
@@ -743,72 +739,80 @@ export default function App() {
         </div>
       </motion.div>
 
-      <AnimatePresence>{isGridSettingsOpen && (
-        <motion.div drag dragMomentum={false} onDragEnd={(e, info) => { updateSetting('settingsX', settings.settingsX + info.offset.x); updateSetting('settingsY', settings.settingsY + info.offset.y); }} 
-        initial={{ opacity: 0, scale: 0.9, x: settings.settingsX, y: settings.settingsY }} 
-        animate={{ opacity: 1, scale: 1, x: settings.settingsX, y: settings.settingsY }} 
-        exit={{ opacity: 0, scale: 0.9 }} 
-        style={{ position: 'fixed', left: 0, top: 0, zIndex: 50 }} 
-        className="bg-[#1a1a1a] border border-white/10 p-6 rounded-2xl shadow-2xl w-80 max-h-[60vh] overflow-y-auto cursor-default">
-          <div className="flex items-center justify-between mb-4 cursor-move">
-            <h3 className="text-white font-bold">Grid Settings</h3>
-            <button onClick={() => setIsGridSettingsOpen(false)} className="text-zinc-500 hover:text-white"><X size={18} /></button>
-          </div>
-          <div className="space-y-6">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between px-1">
-                <span className="text-zinc-400 text-[11px] uppercase font-bold tracking-wider">Show Grid Canvas</span>
-                <input type="checkbox" checked={settings.showGrid} onChange={(e) => updateSetting('showGrid', e.target.checked)} className="accent-blue-500" />
-              </div>
-              <ColorRow label="Size" value={settings.gridSize} min={10} max={200} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('gridSize',v)} onCommit={(v:any)=>updateSetting('gridSize',v)} />
-              <ColorRow label="Opacity" value={settings.gridOpacity} min={0.05} max={1} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('gridOpacity',v)} onCommit={(v:any)=>updateSetting('gridOpacity',v)} />
-            </div>
-          </div>
-        </motion.div>
-      )}</AnimatePresence>
-
       <AnimatePresence>{isSettingsOpen && (
         <motion.div drag dragMomentum={false} onDragEnd={(e, info) => { updateSetting('settingsX', settings.settingsX + info.offset.x); updateSetting('settingsY', settings.settingsY + info.offset.y); }} 
         initial={{ opacity: 0, scale: 0.9, x: settings.settingsX, y: settings.settingsY }} 
         animate={{ opacity: 1, scale: 1, x: settings.settingsX, y: settings.settingsY }} 
         exit={{ opacity: 0, scale: 0.9 }} 
         style={{ position: 'fixed', left: 0, top: 0, zIndex: 50 }} 
-        className="bg-[#1a1a1a] border border-white/10 p-6 rounded-2xl shadow-2xl w-80 max-h-[60vh] overflow-y-auto cursor-default">
-          <div className="flex items-center justify-between mb-4 cursor-move">
-            <h3 className="text-white font-bold">Settings</h3>
-            <button onClick={() => setIsSettingsOpen(false)} className="text-zinc-500 hover:text-white"><X size={18} /></button>
+        className="bg-[#1a1a1a] border border-white/10 p-0 rounded-2xl shadow-2xl w-96 max-h-[80vh] flex flex-col overflow-hidden cursor-default">
+          <div className="flex items-center justify-between p-4 border-b border-white/10 cursor-move shrink-0">
+            <h3 className="text-white font-bold flex items-center gap-2"><Settings size={18} /> Application Settings</h3>
+            <button onClick={() => setIsSettingsOpen(false)} className="text-zinc-500 hover:text-white p-1 hover:bg-white/5 rounded-lg transition-colors"><X size={18} /></button>
           </div>
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-zinc-500 uppercase flex items-center gap-2"><Layout size={12} /> Main Toolbar</h4>
-              <ColorRow label="Scale" value={settings.mainToolbarScale} min={0.5} max={2.5} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('mainToolbarScale',v)} onCommit={(v:any)=>updateSetting('mainToolbarScale',v)} />
-              <ColorRow label="Padding" value={settings.mainToolbarPadding} min={0} max={32} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('mainToolbarPadding',v)} onCommit={(v:any)=>updateSetting('mainToolbarPadding',v)} />
-              <ColorRow label="Icon Size" value={settings.mainToolbarIconSize} min={12} max={48} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('mainToolbarIconSize',v)} onCommit={(v:any)=>updateSetting('mainToolbarIconSize',v)} />
-              <ColorRow label="Spacing" value={settings.mainToolbarGap} min={0} max={20} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('mainToolbarGap',v)} onCommit={(v:any)=>updateSetting('mainToolbarGap',v)} />
-            </div>
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-zinc-500 uppercase flex items-center gap-2"><ZoomIn size={12} /> Canvas Scales</h4>
-              <ColorRow label="UI" value={settings.uiScale} min={0.5} max={2} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('uiScale',v)} onCommit={(v:any)=>updateSetting('uiScale',v)} />
-              <ColorRow label="Text" value={settings.textScale} min={0.5} max={2} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('textScale',v)} onCommit={(v:any)=>updateSetting('textScale',v)} />
-              <ColorRow label="Stroke" value={settings.textStroke} min={0} max={3} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('textStroke',v)} onCommit={(v:any)=>updateSetting('textStroke',v)} />
-            </div>
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-zinc-500 uppercase flex items-center gap-2"><Maximize2 size={12}/> Tile Geometry</h4>
-              <ColorRow label="Tile W" value={settings.tileWidth} min={120} max={400} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('tileWidth',v)} onCommit={(v:any)=>updateSetting('tileWidth',v)} />
-              <ColorRow label="Color Tile W" value={settings.colorTileWidth} min={120} max={400} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('colorTileWidth',v)} onCommit={(v:any)=>updateSetting('colorTileWidth',v)} />
-              <ColorRow label="Handle H" value={settings.handleHeight} min={10} max={100} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('handleHeight',v)} onCommit={(v:any)=>updateSetting('handleHeight',v)} />
-              <ColorRow label="Handle Y" value={settings.handleY} min={-50} max={50} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('handleY',v)} onCommit={(v:any)=>updateSetting('handleY',v)} />
-              <ColorRow label="Label Width" value={settings.colorRowLabelWidth} min={12} max={100} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('colorRowLabelWidth',v)} onCommit={(v:any)=>updateSetting('colorRowLabelWidth',v)} />
-            </div>
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Tile Snugness</h4>
-              <ColorRow label="Toolbar H" value={settings.tileToolbarHeight} min={16} max={64} precision={1} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('tileToolbarHeight',v)} onCommit={(v:any)=>updateSetting('tileToolbarHeight',v)} />
-              <ColorRow label="Toolbar Opacity" value={settings.tileToolbarOpacity} min={0} max={1} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('tileToolbarOpacity',v)} onCommit={(v:any)=>updateSetting('tileToolbarOpacity',v)} />
-              <ColorRow label="Icon Scale" value={settings.tileIconScale} min={0.5} max={2} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('tileIconScale',v)} onCommit={(v:any)=>updateSetting('tileIconScale',v)} />
-              <ColorRow label="Row Pad X" value={settings.rowPaddingX} min={0} max={40} precision={1} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('rowPaddingX',v)} onCommit={(v:any)=>updateSetting('rowPaddingX',v)} />
-              <ColorRow label="Inner Gap" value={settings.innerGap} min={0} max={32} precision={1} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('innerGap',v)} onCommit={(v:any)=>updateSetting('innerGap',v)} />
-              <ColorRow label="Color Slider Pad" value={settings.colorSliderPaddingX} min={0} max={40} precision={1} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('colorSliderPaddingX',v)} onCommit={(v:any)=>updateSetting('colorSliderPaddingX',v)} />
-            </div>
+          
+          <div className="flex border-b border-white/10 shrink-0">
+            {(['canvas', 'tiles', 'visuals'] as const).map(tab => (
+              <button 
+                key={tab} 
+                onClick={() => setSettingsTab(tab)}
+                className={`flex-1 py-3 text-[10px] uppercase font-bold tracking-widest transition-colors ${settingsTab === tab ? 'text-blue-500 bg-blue-500/5 border-b-2 border-blue-500' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+            {settingsTab === 'canvas' && (
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em] mb-4">Grid & Background</h4>
+                  <div className="flex items-center justify-between px-1 bg-white/5 p-3 rounded-xl border border-white/5">
+                    <span className="text-zinc-300 text-xs font-medium">Show Grid Overlay</span>
+                    <input type="checkbox" checked={settings.showGrid} onChange={(e) => updateSetting('showGrid', e.target.checked)} className="w-4 h-4 rounded accent-blue-500 cursor-pointer" />
+                  </div>
+                  <ColorRow label="Grid Cell Size" value={settings.gridSize} min={10} max={200} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('gridSize',v)} onCommit={(v:any)=>updateSetting('gridSize',v)} />
+                  <ColorRow label="Grid Line Opacity" value={settings.gridOpacity} min={0.01} max={1} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('gridOpacity',v)} onCommit={(v:any)=>updateSetting('gridOpacity',v)} />
+                </div>
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em] mb-4">Interface Scaling</h4>
+                  <ColorRow label="Main Toolbar Scale" value={settings.mainToolbarScale} min={0.5} max={2.5} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('mainToolbarScale',v)} onCommit={(v:any)=>updateSetting('mainToolbarScale',v)} />
+                  <ColorRow label="Global UI Scale" value={settings.uiScale} min={0.5} max={2} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('uiScale',v)} onCommit={(v:any)=>updateSetting('uiScale',v)} />
+                </div>
+              </div>
+            )}
+
+            {settingsTab === 'tiles' && (
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em] mb-4">Tile Dimensions</h4>
+                  <ColorRow label="Standard Tile Width" value={settings.tileWidth} min={120} max={600} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('tileWidth',v)} onCommit={(v:any)=>updateSetting('tileWidth',v)} />
+                  <ColorRow label="Color Tile Width" value={settings.colorTileWidth} min={120} max={600} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('colorTileWidth',v)} onCommit={(v:any)=>updateSetting('colorTileWidth',v)} />
+                  <ColorRow label="Bottom Padding" value={settings.tileBottomPadding} min={0} max={100} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('tileBottomPadding',v)} onCommit={(v:any)=>updateSetting('tileBottomPadding',v)} />
+                </div>
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em] mb-4">Handle Configuration</h4>
+                  <ColorRow label="Handle Height" value={settings.handleHeight} min={10} max={100} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('handleHeight',v)} onCommit={(v:any)=>updateSetting('handleHeight',v)} />
+                  <ColorRow label="Vertical Offset" value={settings.handleY} min={-100} max={100} precision={0} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('handleY',v)} onCommit={(v:any)=>updateSetting('handleY',v)} />
+                </div>
+              </div>
+            )}
+
+            {settingsTab === 'visuals' && (
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em] mb-4">Typography</h4>
+                  <ColorRow label="Text Scale" value={settings.textScale} min={0.5} max={3} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('textScale',v)} onCommit={(v:any)=>updateSetting('textScale',v)} />
+                  <ColorRow label="Stroke Weight" value={settings.textStroke} min={0} max={5} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('textStroke',v)} onCommit={(v:any)=>updateSetting('textStroke',v)} />
+                </div>
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em] mb-4">Toolbar Effects</h4>
+                  <ColorRow label="Toolbar Opacity" value={settings.tileToolbarOpacity} min={0} max={1} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('tileToolbarOpacity',v)} onCommit={(v:any)=>updateSetting('tileToolbarOpacity',v)} />
+                  <ColorRow label="Icon Scale" value={settings.tileIconScale} min={0.5} max={2.5} precision={2} highlightColor="#3b82f6" onChange={(v:any)=>updateSetting('tileIconScale',v)} onCommit={(v:any)=>updateSetting('tileIconScale',v)} />
+                </div>
+              </div>
+            )}
           </div>
         </motion.div>
       )}</AnimatePresence>
