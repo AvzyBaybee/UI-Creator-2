@@ -55,8 +55,83 @@ export default function App() {
   const [isDrawingGroup, setIsDrawingGroup] = useState(false); const [isSelecting, setIsSelecting] = useState(false);
   const [isZooming, setIsZooming] = useState(false); const [drawingCable, setDrawingCable] = useState<any>(null);
   const [hoveredInputSocketId, setHoveredInputSocketId] = useState<string | null>(null);
+  const drawingCableRef = useRef<any>(null);
+  useEffect(() => { drawingCableRef.current = drawingCable; }, [drawingCable]);
+  const hoveredInputSocketIdRef = useRef<string | null>(null);
+  useEffect(() => { hoveredInputSocketIdRef.current = hoveredInputSocketId; }, [hoveredInputSocketId]);
+
   const [hoveredCable, setHoveredCable] = useState<any>(null); const [draggingClip, setDraggingClip] = useState<any>(null);
   const [selectionStart, setSelectionStart] = useState<any>(null); const [selectionRect, setSelectionRect] = useState<any>(null);
+  
+  useEffect(() => {
+    if (!drawingCable) return;
+    const onPointerMove = (e: PointerEvent) => {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const container = stage.container();
+      const rect = container.getBoundingClientRect();
+      const pos = { x: (e.clientX - rect.left), y: (e.clientY - rect.top) };
+      const worldPos = transformPoint(pos);
+      setDrawingCable((prev: any) => prev ? { ...prev, currentX: worldPos.x, currentY: worldPos.y } : null);
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      const cable = drawingCableRef.current;
+      if (cable) {
+        const stage = stageRef.current;
+        if (stage) {
+          const container = stage.container();
+          const rect = container.getBoundingClientRect();
+          const pos = { x: (e.clientX - rect.left), y: (e.clientY - rect.top) };
+          const worldPos = transformPoint(pos);
+
+          // Find the closest input socket
+          let closestId = null;
+          let minDist = 60 * 60; // 60px radius squared
+
+          elementsRef.current.forEach(el => {
+            if (el.type === 'tile') {
+              const tileHeight = tileHeightsRef.current[el.id] || 200;
+              const nameBarBottom = 40;
+              const socketYOffset = nameBarBottom + (tileHeight - nameBarBottom) / 2;
+              
+              // Socket world position
+              const socketWorldX = el.tileX;
+              const socketWorldY = el.tileY + (socketYOffset * settings.uiScale);
+              
+              const dx = worldPos.x - socketWorldX;
+              const dy = worldPos.y - socketWorldY;
+              const d2 = dx * dx + dy * dy;
+              
+              if (d2 < minDist) {
+                minDist = d2;
+                closestId = el.id;
+              }
+            }
+          });
+
+          if (closestId) {
+            const source = elementsRef.current.find(el => el.id === cable.sourceId);
+            const isGradient = source?.type === 'gradient' || cable.sourceId.includes('gradient');
+            const isColor = source?.type === 'color' || cable.sourceId.includes('color');
+
+            if (isColor) {
+              handleUpdateEnd(closestId, { colorTileId: cable.sourceId, gradientTileId: undefined });
+            } else if (isGradient) {
+              handleUpdateEnd(closestId, { gradientTileId: cable.sourceId, colorTileId: undefined });
+            }
+          }
+        }
+      }
+      setDrawingCable(null);
+    };
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+  }, [!!drawingCable]);
+
   const [newTileStart, setNewTileStart] = useState<any>(null); const [currentDrawingTile, setCurrentDrawingTile] = useState<any>(null);
   const [currentDrawingGroup, setCurrentDrawingGroup] = useState<any>(null); const [transformingTile, setTransformingTile] = useState<any>(null);
   const zoomStartRef = useRef<any>(null); const lastHueRef = useRef<number>(Math.floor(Math.random() * 360));
@@ -218,7 +293,6 @@ export default function App() {
   const handleStagePointerMove = (e: any) => {
     const stage = e.target.getStage(); const pos = stage.getPointerPosition(); const worldPos = transformPoint(pos);
     const roundedWorldPos = { x: Math.round(worldPos.x), y: Math.round(worldPos.y) };
-    if (drawingCable) setDrawingCable({ ...drawingCable, currentX: worldPos.x, currentY: worldPos.y });
     if (draggingClip) {
       const tile = elements.find(el => el.id === draggingClip.tileId) as TileData;
       if (tile) { const newClips = [...(tile.cableClips || [])]; newClips[draggingClip.clipIndex] = { ...newClips[draggingClip.clipIndex], x: worldPos.x, y: worldPos.y }; handleUpdate(tile.id, { cableClips: newClips }); }
@@ -245,17 +319,6 @@ export default function App() {
   };
 
   const handleStagePointerUp = () => {
-    if (drawingCable) {
-      if (hoveredInputSocketId) {
-        const source = elements.find(e => e.id === drawingCable.sourceId);
-        if (source?.type === 'color') {
-          handleUpdateEnd(hoveredInputSocketId, { colorTileId: drawingCable.sourceId, gradientTileId: undefined });
-        } else if (source?.type === 'gradient') {
-          handleUpdateEnd(hoveredInputSocketId, { gradientTileId: drawingCable.sourceId, colorTileId: undefined });
-        }
-      }
-      setDrawingCable(null);
-    }
     if (draggingClip) { pushToHistory(elementsRef.current); setDraggingClip(null); }
     if (isZooming) { setIsZooming(false); zoomStartRef.current = null; }
     else if (isDrawing && currentDrawingTile) {
@@ -631,13 +694,16 @@ export default function App() {
             {currentDrawingTile && <Rect {...currentDrawingTile} fill={hexToRgba(currentDrawingTile.highlightColor, 0.05)} stroke={currentDrawingTile.highlightColor} strokeWidth={1/stageScale} />}
             {currentDrawingGroup && <Rect x={currentDrawingGroup.tileX} y={currentDrawingGroup.tileY} width={currentDrawingGroup.tileWidth} height={currentDrawingGroup.tileHeight} fill={hexToRgba(currentDrawingGroup.color, 0.1)} stroke={currentDrawingGroup.color} strokeWidth={1/stageScale} />}
             {selectionRect && <Rect {...selectionRect} fill="rgba(59, 130, 246, 0.1)" stroke="#3b82f6" strokeWidth={1 / stageScale} dash={[5 / stageScale, 5 / stageScale]} />}
-            {tiles.filter(t => t.colorTileId).map(t => {
-              const s = elements.find(e => e.id === t.colorTileId) as ColorTileData | undefined; if (!s) return null;
+            {tiles.filter(t => t.colorTileId || t.gradientTileId).map(t => {
+              const sourceId = t.colorTileId || t.gradientTileId;
+              const s = elements.find(e => e.id === sourceId) as (ColorTileData | GradientTileData) | undefined; 
+              if (!s) return null;
               
               const nameBarBottom = 40;
               const sHeight = tileHeightsRef.current[s.id] || 200;
               const sSocketY = nameBarBottom + (sHeight - nameBarBottom) / 2;
-              const sx = s.tileX + (settings.colorTileWidth * settings.uiScale);
+              const sWidth = s.type === 'color' ? settings.colorTileWidth : settings.gradientTileWidth;
+              const sx = s.tileX + (sWidth * settings.uiScale);
               const sy = s.tileY + (sSocketY * settings.uiScale);
 
               const tHeight = tileHeightsRef.current[t.id] || 200;
@@ -687,7 +753,7 @@ export default function App() {
               );
             })}
             {hoveredCable && <Circle x={hoveredCable.x} y={hoveredCable.y} radius={6} fill={hoveredCable.color} stroke="white" strokeWidth={1.5} listening={false} />}
-            {drawingCable && <Path data={`M ${drawingCable.startX} ${drawingCable.startY} C ${drawingCable.startX + Math.max(100, Math.abs(drawingCable.currentX - drawingCable.startX) * 0.4)} ${drawingCable.startY}, ${drawingCable.currentX - Math.max(100, Math.abs(drawingCable.currentX - drawingCable.startX) * 0.4)} ${drawingCable.currentY}, ${drawingCable.currentX} ${drawingCable.currentY}`} stroke={drawingCable.color} strokeWidth={3} lineCap="round" />}
+            {drawingCable && <Path data={`M ${drawingCable.startX} ${drawingCable.startY} C ${drawingCable.startX + Math.max(100, Math.abs(drawingCable.currentX - drawingCable.startX) * 0.4)} ${drawingCable.startY}, ${drawingCable.currentX - Math.max(100, Math.abs(drawingCable.currentX - drawingCable.startX) * 0.4)} ${drawingCable.currentY}, ${drawingCable.currentX} ${drawingCable.currentY}`} stroke={drawingCable.color} strokeWidth={3} lineCap="round" listening={false} />}
             {(transformingTile || currentDrawingTile) && (() => {
               const t = transformingTile || currentDrawingTile; if (!t || t.width < 1 || t.height < 1) return null;
               return (
@@ -1151,20 +1217,20 @@ export default function App() {
                          onPointerDown={(e) => { e.stopPropagation(); setDrawingCable({ sourceId: el.id, color: (el as any).highlightColor, startX: el.tileX + (elWidth * settings.uiScale), startY: el.tileY + (socketYOffset * settings.uiScale), currentX: el.tileX + (elWidth * settings.uiScale), currentY: el.tileY + (socketYOffset * settings.uiScale) }); }} />
                   ) : (
                     <div className="absolute w-6 h-6 rounded-full cursor-crosshair border-4 border-[#1a1a1a] z-50 hover:scale-110 transition-transform shadow-lg" 
-                         style={{ left: -12, top: socketYOffset, transform: 'translateY(-50%)', backgroundColor: (el as any).highlightColor || '#52525b' }} 
-                         onMouseEnter={() => { showTooltip(TOOLTIPS.socketInput); setHoveredInputSocketId(el.id); }} onMouseLeave={() => { hideTooltip(); setHoveredInputSocketId(null); }} 
-                         onPointerUp={(e) => { 
-                           e.stopPropagation(); 
-                           if (drawingCable) { 
-                             const source = elements.find(e => e.id === drawingCable.sourceId);
-                             if (source?.type === 'color') {
-                               handleUpdateEnd(el.id, { colorTileId: drawingCable.sourceId, gradientTileId: undefined }); 
-                             } else if (source?.type === 'gradient') {
-                               handleUpdateEnd(el.id, { gradientTileId: drawingCable.sourceId, colorTileId: undefined }); 
+                         style={{ 
+                           left: -12, 
+                           top: socketYOffset, 
+                           transform: 'translateY(-50%)', 
+                           backgroundColor: (() => {
+                             const connectedId = (el as any).colorTileId || (el as any).gradientTileId;
+                             if (connectedId) {
+                               const source = elements.find(e => e.id === connectedId);
+                               return source ? (source as any).highlightColor : '#52525b';
                              }
-                             setDrawingCable(null); 
-                           } 
+                             return '#52525b';
+                           })()
                          }} 
+                         onMouseEnter={() => { showTooltip(TOOLTIPS.socketInput); setHoveredInputSocketId(el.id); }} onMouseLeave={() => { hideTooltip(); setHoveredInputSocketId(null); }} 
                          onPointerDown={(e) => { e.stopPropagation(); if ((el as any).colorTileId || (el as any).gradientTileId) handleUpdateEnd(el.id, { colorTileId: undefined, gradientTileId: undefined }); }} />
                   )}
                 </div>
